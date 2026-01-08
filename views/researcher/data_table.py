@@ -8,6 +8,13 @@ import pandas as pd
 from datetime import datetime, timedelta
 import random
 
+# Try to import database functions
+try:
+    from utils.database import get_all_interactions, is_database_connected
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+
 # Page configuration
 st.markdown("""
 <div class="page-header">
@@ -20,8 +27,44 @@ st.markdown("""
 st.info("⚠️ **Privacy Notice**: Raw chat content is never stored. Only synthesized summaries and metrics are available for analysis.", icon="🔒")
 
 
+def load_from_database() -> pd.DataFrame:
+    """Load data from the database."""
+    if not DB_AVAILABLE or not is_database_connected():
+        return None
+    
+    interactions = get_all_interactions(limit=1000)
+    if not interactions:
+        return None
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(interactions)
+    
+    # Rename columns to match display format
+    df = df.rename(columns={
+        'interaction_id': 'ID',
+        'user_id': 'User ID',
+        'interaction_date': 'Date',
+        'summary': 'Topic Summary',
+        'satisfaction_raw': 'Satisfaction (Raw)',
+        'satisfaction_normalized': 'Satisfaction (Normalized)',
+        'correlation_index': 'Correlation Index',
+        'verification_flag': 'Verified'
+    })
+    
+    # Convert verification flag to boolean
+    df['Verified'] = df['Verified'].apply(lambda x: x == 'V' if x else False)
+    
+    # Convert date column
+    df['Date'] = pd.to_datetime(df['Date'])
+    
+    # Add Source column (placeholder - would come from RAG system)
+    df['Source'] = 'User Interaction'
+    
+    return df
+
+
 def generate_demo_data(n_rows: int = 100) -> pd.DataFrame:
-    """Generate demo data matching the DB Quant schema."""
+    """Generate demo data matching the DB Quant schema (fallback)."""
     
     topics = [
         "Financial Management",
@@ -57,14 +100,23 @@ def generate_demo_data(n_rows: int = 100) -> pd.DataFrame:
     return df.sort_values("Date", ascending=False).reset_index(drop=True)
 
 
-# Cache the demo data
-@st.cache_data
+@st.cache_data(ttl=60)  # Cache for 60 seconds
 def get_data():
-    return generate_demo_data(150)
+    """Load data from database or generate demo data as fallback."""
+    db_data = load_from_database()
+    if db_data is not None and len(db_data) > 0:
+        return db_data, True  # Return data and flag indicating DB source
+    return generate_demo_data(150), False  # Fallback to demo data
 
 
 # Load data
-df = get_data()
+df, using_db = get_data()
+
+# Show data source indicator
+if using_db:
+    st.success(f"📊 Showing {len(df)} records from database", icon="✅")
+else:
+    st.warning("📊 Showing demo data (database empty or not connected)", icon="⚠️")
 
 # --- FILTERS SECTION ---
 st.markdown("### 🔍 Filters")

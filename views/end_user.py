@@ -5,8 +5,15 @@ and rate their satisfaction with responses.
 """
 
 import streamlit as st
-from utils.auth import get_current_user, update_interaction_count
+from utils.auth import get_current_user, update_interaction_count, get_user_id, is_using_database
 from utils.llm import init_gemini, send_message, clear_chat_session, is_api_configured
+
+# Try to import database functions
+try:
+    from utils.database import save_interaction, is_database_connected
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
 
 
 def render_api_status() -> bool:
@@ -129,7 +136,33 @@ def render_satisfaction_prompt(message_index: int) -> None:
             st.session_state.current_satisfaction = satisfaction
             st.session_state.awaiting_rating = False
             st.session_state.last_rated_index = message_index
-            st.toast(f"✅ Thank you for your feedback on government performance!", icon="🏛️")
+            
+            # Save to database if available
+            saved_to_db = False
+            if DB_AVAILABLE and is_database_connected():
+                user_id = get_user_id()
+                if user_id:
+                    # Get the topic summary from the last assistant message
+                    topic_summary = ""
+                    if len(st.session_state.chat_history) >= 2:
+                        # Get the user's question as context
+                        user_msg = st.session_state.chat_history[-2].get('content', '')[:200]
+                        assistant_msg = st.session_state.chat_history[-1].get('content', '')[:500]
+                        topic_summary = f"Q: {user_msg}\nA: {assistant_msg}"
+                    
+                    success, result = save_interaction(
+                        user_id=user_id,
+                        satisfaction_raw=float(satisfaction),
+                        summary=topic_summary,
+                        correlation_index=None,  # Set by RAG system later
+                        verification_flag='U'    # Unverified without RAG
+                    )
+                    saved_to_db = success
+            
+            if saved_to_db:
+                st.toast("Thank you! Your rating has been recorded.", icon="✅")
+            else:
+                st.toast("Thank you for your feedback on government performance!", icon="🏛️")
             st.rerun()
     with col2:
         st.caption("Your rating helps build indicators of government quality.")

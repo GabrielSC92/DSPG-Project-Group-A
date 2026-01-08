@@ -4,10 +4,19 @@ Main Streamlit Application with Authentication
 """
 
 import streamlit as st
+import re
+import uuid
 from utils.auth import (init_session_state, login_user, logout_user,
                         get_current_user, is_authenticated, get_access_level,
                         AccessLevel)
 from components.feedback_modal import render_feedback_modal
+
+# Try to import database functions for registration
+try:
+    from utils.database import create_user, get_user_by_email, is_database_connected, check_email_exists
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Quality of Dutch Government",
@@ -221,6 +230,149 @@ st.markdown("""
             unsafe_allow_html=True)
 
 
+def generate_user_id() -> str:
+    """Generate a unique user ID for new registrations."""
+    return f"USR_{uuid.uuid4().hex[:6].upper()}"
+
+
+def validate_email(email: str) -> bool:
+    """Basic email validation."""
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+
+def validate_password(password: str) -> tuple[bool, str]:
+    """
+    Validate password strength.
+    Returns (is_valid, error_message)
+    """
+    if len(password) < 6:
+        return False, "Password must be at least 6 characters"
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least one number"
+    if not any(c.isalpha() for c in password):
+        return False, "Password must contain at least one letter"
+    return True, ""
+
+
+@st.dialog("📝 Create Account", width="small")
+def render_signup_dialog():
+    """Render the sign-up dialog for new end-users."""
+
+    st.markdown("""
+    <p style="color: #94A3B8; font-size: 0.9rem; margin-bottom: 1rem;">
+        Create an account to track your interactions and provide feedback 
+        on Dutch government performance.
+    </p>
+    """,
+                unsafe_allow_html=True)
+
+    # Check database availability
+    if not DB_AVAILABLE or not is_database_connected():
+        st.error(
+            "Registration is currently unavailable. Please try again later.")
+        if st.button("Close", use_container_width=True):
+            st.rerun()
+        return
+
+    # Registration form
+    with st.form("signup_form", clear_on_submit=False):
+        email = st.text_input("Email Address",
+                              placeholder="your.email@example.com",
+                              key="signup_email")
+
+        password = st.text_input(
+            "Password",
+            type="password",
+            placeholder="Min 6 characters, include letters and numbers",
+            key="signup_password")
+
+        confirm_password = st.text_input("Confirm Password",
+                                         type="password",
+                                         placeholder="Re-enter your password",
+                                         key="signup_confirm")
+
+        # Terms acknowledgment
+        agree_terms = st.checkbox(
+            "I understand this is a research project and my feedback will be used for academic purposes",
+            key="signup_terms")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            cancel = st.form_submit_button("Cancel", use_container_width=True)
+        with col2:
+            submit = st.form_submit_button("Create Account",
+                                           use_container_width=True,
+                                           type="primary")
+
+        if cancel:
+            st.rerun()
+
+        if submit:
+            # Validation
+            errors = []
+
+            if not email:
+                errors.append("Email is required")
+            elif not validate_email(email):
+                errors.append("Please enter a valid email address")
+
+            if not password:
+                errors.append("Password is required")
+            else:
+                pwd_valid, pwd_error = validate_password(password)
+                if not pwd_valid:
+                    errors.append(pwd_error)
+
+            if password != confirm_password:
+                errors.append("Passwords do not match")
+
+            if not agree_terms:
+                errors.append("Please acknowledge the research terms")
+
+            # Check if email already exists
+            if email and validate_email(email):
+                if check_email_exists(email):
+                    errors.append("An account with this email already exists")
+
+            if errors:
+                for error in errors:
+                    st.error(f"⚠️ {error}")
+            else:
+                # Create the user (End-User only, 'U' access level)
+                user_id = generate_user_id()
+                success, message = create_user(
+                    user_id=user_id,
+                    email=email,
+                    access_level=
+                    'U',  # End-User only - researchers are added manually
+                    password=password)
+
+                if success:
+                    st.success(
+                        "✅ Account created successfully! You can now log in.")
+                    st.balloons()
+                    # Note: Don't auto-login, let them use the login form
+                else:
+                    st.error(f"❌ Registration failed: {message}")
+
+    # Info note
+    st.markdown("""
+    <div style="
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        padding: 0.75rem;
+        margin-top: 1rem;
+    ">
+        <p style="color: #94A3B8; font-size: 0.8rem; margin: 0;">
+            🔬 <strong>Researcher access?</strong> Contact your administrator to be added manually.
+        </p>
+    </div>
+    """,
+                unsafe_allow_html=True)
+
+
 def render_login_page():
     """Render the login page with authentication form."""
 
@@ -273,6 +425,26 @@ def render_login_page():
                     </div>
                     """,
                                 unsafe_allow_html=True)
+
+        # Sign Up button (material blue style)
+        st.markdown("""
+        <style>
+            /* Style the Sign Up button with Material Blue */
+            button[kind="secondary"][data-testid="baseButton-secondary"] {
+                background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%) !important;
+                color: white !important;
+                border: none !important;
+            }
+            button[kind="secondary"][data-testid="baseButton-secondary"]:hover {
+                background: linear-gradient(135deg, #1E88E5 0%, #1565C0 100%) !important;
+                box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4) !important;
+            }
+        </style>
+        """,
+                    unsafe_allow_html=True)
+
+        if st.button("Sign Up", use_container_width=True, key="signup_btn"):
+            render_signup_dialog()
 
         # Demo credentials hint
         st.markdown("---")

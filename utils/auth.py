@@ -9,40 +9,53 @@ from typing import Tuple, Optional, Dict, Any
 import hashlib
 from datetime import datetime
 
+# Try to import database functions
+try:
+    from utils.database import (
+        authenticate_user_db, 
+        get_user_by_email, 
+        is_database_connected,
+        update_user_interaction_count as db_update_interaction_count,
+        update_user_satisfaction_baseline as db_update_satisfaction_baseline
+    )
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+
+
 class AccessLevel(Enum):
     """User access levels as defined in the system architecture."""
     END_USER = "end_user"
     RESEARCHER = "researcher"
 
 
-# Demo users database (in production, this would be replaced with actual DB calls)
-# Password hash for 'demo123' using SHA256
+# Fallback demo users (used if database is not available)
 DEMO_PASSWORD_HASH = hashlib.sha256("demo123".encode()).hexdigest()
 
 DEMO_USERS = {
     "user@demo.nl": {
-        "user_id": "usr_001",
+        "user_id": "USR_001",
         "email": "user@demo.nl",
         "password_hash": DEMO_PASSWORD_HASH,
-        "access_level": AccessLevel.END_USER,
+        "access_level": "U",
         "created_date": "2024-01-01",
         "satisfaction_baseline": 5.0,
         "interaction_count": 0
     },
     "researcher@demo.nl": {
-        "user_id": "usr_002",
+        "user_id": "USR_002",
         "email": "researcher@demo.nl",
         "password_hash": DEMO_PASSWORD_HASH,
-        "access_level": AccessLevel.RESEARCHER,
+        "access_level": "R",
         "created_date": "2024-01-01",
         "satisfaction_baseline": None,
         "interaction_count": 0
     },
     "admin@qog.nl": {
-        "user_id": "usr_003",
+        "user_id": "USR_003",
         "email": "admin@qog.nl",
         "password_hash": DEMO_PASSWORD_HASH,
-        "access_level": AccessLevel.RESEARCHER,
+        "access_level": "R",
         "created_date": "2024-01-01",
         "satisfaction_baseline": None,
         "interaction_count": 0
@@ -60,7 +73,8 @@ def init_session_state() -> None:
         'show_feedback_modal': False,
         'chat_history': [],
         'current_satisfaction': None,
-        'debug_mode': False
+        'debug_mode': False,
+        'using_database': False
     }
     
     for key, value in defaults.items():
@@ -78,9 +92,17 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hash_password(password) == password_hash
 
 
+def _convert_access_level(access_level_str: str) -> AccessLevel:
+    """Convert database access level string to AccessLevel enum."""
+    if access_level_str == 'R':
+        return AccessLevel.RESEARCHER
+    return AccessLevel.END_USER
+
+
 def authenticate_user(email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """
     Authenticate a user with email and password.
+    Tries database first, falls back to demo users.
     
     Args:
         email: User's email address
@@ -91,19 +113,25 @@ def authenticate_user(email: str, password: str) -> Tuple[bool, Optional[Dict[st
     """
     email = email.lower().strip()
     
-    # Check if user exists in demo database
-    if email not in DEMO_USERS:
-        return False, None
+    # Try database authentication first
+    if DB_AVAILABLE and is_database_connected():
+        success, user_data = authenticate_user_db(email, password)
+        if success and user_data:
+            # Convert access_level string to enum
+            user_data['access_level'] = _convert_access_level(user_data.get('access_level', 'U'))
+            st.session_state.using_database = True
+            return True, user_data
     
-    user = DEMO_USERS[email]
+    # Fallback to demo users
+    if email in DEMO_USERS:
+        user = DEMO_USERS[email]
+        if verify_password(password, user['password_hash']):
+            user_data = {k: v for k, v in user.items() if k != 'password_hash'}
+            user_data['access_level'] = _convert_access_level(user_data.get('access_level', 'U'))
+            st.session_state.using_database = False
+            return True, user_data
     
-    # Verify password
-    if not verify_password(password, user['password_hash']):
-        return False, None
-    
-    # Return user data (excluding password hash)
-    user_data = {k: v for k, v in user.items() if k != 'password_hash'}
-    return True, user_data
+    return False, None
 
 
 def login_user(email: str, password: str) -> Tuple[bool, str]:
@@ -135,7 +163,8 @@ def login_user(email: str, password: str) -> Tuple[bool, str]:
         
         # Log successful login
         access_str = "Researcher" if user_data['access_level'] == AccessLevel.RESEARCHER else "End User"
-        return True, f"Welcome back! Access level: {access_str}"
+        db_status = "(DB)" if st.session_state.using_database else "(Demo)"
+        return True, f"Welcome! Access level: {access_str} {db_status}"
     
     return False, "Invalid email or password. Please try again."
 
@@ -148,6 +177,7 @@ def logout_user() -> None:
     st.session_state.chat_history = []
     st.session_state.current_satisfaction = None
     st.session_state.show_feedback_modal = False
+    st.session_state.using_database = False
 
 
 def is_authenticated() -> bool:
@@ -182,11 +212,15 @@ def get_user_id() -> Optional[str]:
 
 
 def update_interaction_count() -> None:
-    """Increment the user's interaction count."""
+    """Increment the user's interaction count (in session and optionally DB)."""
     user = get_current_user()
     if user and 'interaction_count' in user:
-        user['interaction_count'] += 1
+        user['interaction_count'] = (user['interaction_count'] or 0) + 1
         st.session_state.user = user
+        
+        # Also update in database if connected
+        if st.session_state.get('using_database') and DB_AVAILABLE:
+            db_update_interaction_count(user['user_id'])
 
 
 def get_satisfaction_baseline() -> Optional[float]:
@@ -196,9 +230,17 @@ def get_satisfaction_baseline() -> Optional[float]:
 
 
 def update_satisfaction_baseline(new_baseline: float) -> None:
-    """Update the user's satisfaction baseline."""
+    """Update the user's satisfaction baseline (in session and optionally DB)."""
     user = get_current_user()
     if user:
         user['satisfaction_baseline'] = new_baseline
         st.session_state.user = user
+        
+        # Also update in database if connected
+        if st.session_state.get('using_database') and DB_AVAILABLE:
+            db_update_satisfaction_baseline(user['user_id'], new_baseline)
 
+
+def is_using_database() -> bool:
+    """Check if current session is using database authentication."""
+    return st.session_state.get('using_database', False)
