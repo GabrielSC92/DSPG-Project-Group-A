@@ -5,8 +5,7 @@ Handles database connections and operations for Auth and Quant tables.
 
 import os
 from datetime import datetime, date
-from sqlalchemy import create_engine, text, Column, String, Integer, Numeric, Date, Text, ForeignKey, CheckConstraint, DateTime
-from sqlalchemy.sql import func
+from typing import Optional, Dict, Any, List, Tuple
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -100,44 +99,7 @@ if SQLALCHEMY_AVAILABLE:
         satisfaction_normalized = Column(Numeric(3, 1))  # Can be NULL until normalized
         interaction_date = Column(Date, nullable=False)
         summary = Column(Text)  # Can be NULL if no summary
-    class RagDocument(Base):
-        """
-        Stores one row per ingested document (PDF).
-        """
-        __tablename__ = "rag_documents"
-
-        id = Column(Integer, primary_key=True, autoincrement=True)
-
-        # Stable key so re-ingestion updates the same doc
-        # Example: "defensie/Brief+Defensie+PAC24.pdf"
-        doc_key = Column(String(255), unique=True, nullable=False)
-
-        # Folder/category name derived from the folder the PDF is in
-        source_folder = Column(String(80), nullable=False)
-
-        file_name = Column(String(255), nullable=False)
-        file_path = Column(String(500), nullable=True)
-
-        created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-    class RagChunk(Base):
-        """
-        Stores chunked text for RAG retrieval. One document has many chunks.
-        """
-        __tablename__ = "rag_chunks"
-
-        id = Column(Integer, primary_key=True, autoincrement=True)
-
-        document_id = Column(Integer, ForeignKey("rag_documents.id"), nullable=False)
-        chunk_index = Column(Integer, nullable=False)
-
-        page_start = Column(Integer, nullable=True)
-        page_end = Column(Integer, nullable=True)
-
-        chunk_text = Column(Text, nullable=False)
-
-        created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
     class RagDocument(Base):
         """
         Stores one row per ingested document (PDF).
