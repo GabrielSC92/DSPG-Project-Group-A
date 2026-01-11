@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 import os
 from typing import Optional, Tuple
 
+from utils.rag import retrieve_chunks, format_context, format_sources_list
+
 # Load environment variables ONCE at module load
 load_dotenv()
 
@@ -112,24 +114,47 @@ def get_chat_session():
 
 def send_message(prompt: str) -> Tuple[bool, str]:
     """
-    Send a message to the Gemini chat and get a response.
-    
-    Args:
-        prompt: The user's message
-        
-    Returns:
-        Tuple of (success: bool, response_text: str or error_message)
+    RAG-enabled send_message (same signature as before).
+    Retrieves relevant chunks from the DB and answers using Gemini with citations.
     """
     chat = get_chat_session()
     if chat is None:
         return False, "Chat session not initialized. Please check your API configuration."
-    
+
+    # 1) Retrieve context from DB
+    chunks = retrieve_chunks(prompt, k=6)
+    context = format_context(chunks)
+
+    # 2) Build RAG prompt
+    rag_prompt = f"""
+You are answering as an assistant for the Quality of Dutch Government research platform.
+
+Rules:
+- Use ONLY the information in CONTEXT to answer factual claims about reports.
+- If CONTEXT does not contain the answer, say you don't have enough information from the provided sources.
+- Cite sources using [SOURCE 1], [SOURCE 2], etc., matching the context blocks.
+- Keep the answer clear and concise.
+
+CONTEXT:
+{context if context else "NO RELEVANT CONTEXT FOUND."}
+
+USER QUESTION:
+{prompt}
+""".strip()
+
+    # 3) Ask Gemini
     try:
-        response = chat.send_message(prompt)
-        return True, response.text
+        response = chat.send_message(rag_prompt)
+        answer = response.text
+
+        # 4) Append sources list for transparency
+        if chunks:
+            answer += "\n\nSources:\n" + format_sources_list(chunks)
+
+        return True, answer
+
     except Exception as e:
         return False, f"Error getting response: {str(e)}"
-
 
 def clear_chat_session():
     """Clear the current chat session to start fresh."""
