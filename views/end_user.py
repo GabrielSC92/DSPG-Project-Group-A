@@ -92,71 +92,20 @@ def render_api_status() -> bool:
             return True
 
     # Show partial status
-    status_items = []
-    if agent_ok:
-        status_items.append(('Agent', True))
-    else:
-        status_items.append(('Agent', False))
-    if llm_ok:
-        status_items.append(('LLM', True))
-    else:
-        status_items.append(('LLM', False))
+    status_items = [('Agent', agent_ok), ('LLM', llm_ok)]
 
-    badges_html = ""
+    badges = []
     for name, configured in status_items:
         if configured:
-            badges_html += f"""
-                <span style="
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 6px 12px;
-                    border-radius: 20px;
-                    font-size: 0.75rem;
-                    font-family: 'Space Mono', monospace;
-                    background: rgba(34, 197, 94, 0.15);
-                    border: 1px solid rgba(34, 197, 94, 0.3);
-                    color: #4ade80;
-                ">
-                    <span style="
-                        width: 8px;
-                        height: 8px;
-                        border-radius: 50%;
-                        background: #4ade80;
-                    "></span>
-                    {name} ✓
-                </span>
-            """
+            badge = f'<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-family: \'Space Mono\', monospace; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); color: #4ade80;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ade80;"></span>{name} ✓</span>'
         else:
-            badges_html += f"""
-                <span style="
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 6px 12px;
-                    border-radius: 20px;
-                    font-size: 0.75rem;
-                    font-family: 'Space Mono', monospace;
-                    background: rgba(239, 68, 68, 0.15);
-                    border: 1px solid rgba(239, 68, 68, 0.3);
-                    color: #f87171;
-                ">
-                    <span style="
-                        width: 8px;
-                        height: 8px;
-                        border-radius: 50%;
-                        background: #f87171;
-                    "></span>
-                    {name} ✗
-                </span>
-            """
+            badge = f'<span style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-family: \'Space Mono\', monospace; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f87171;"></span>{name} ✗</span>'
+        badges.append(badge)
 
-    st.markdown(f"""
-    <div style="text-align: center; margin-bottom: 1rem; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-        {badges_html}
-    </div>
-    """,
-                unsafe_allow_html=True)
+    badges_html = " ".join(badges)
+    st.markdown(
+        f'<div style="text-align: center; margin-bottom: 1rem; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">{badges_html}</div>',
+        unsafe_allow_html=True)
 
     backend_info = get_backend_info()
     if "Ollama" in backend_info['backend']:
@@ -165,7 +114,8 @@ def render_api_status() -> bool:
 ollama serve
 
 # In another terminal, pull a model:
-ollama pull llama3.2""", language="bash")
+ollama pull llama3.2""",
+                language="bash")
         st.info("Make sure Ollama is installed: https://ollama.ai/download")
     else:
         st.warning("⚠️ Please add your Gemini API keys to the `.env` file")
@@ -174,62 +124,86 @@ GEMINI_API_KEY_AGENT=your_agent_api_key_here
 
 # Or use Ollama (local, no rate limits):
 LLM_BACKEND=ollama
-OLLAMA_MODEL=llama3.2""", language="bash")
+OLLAMA_MODEL=llama3.2""",
+                language="bash")
         st.info(
             "Get Gemini API keys at: https://makersuite.google.com/app/apikey")
     return False
 
 
 def render_satisfaction_prompt(message_index: int) -> None:
-    """Render the satisfaction rating prompt to capture citizen sentiment about government performance."""
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(30, 58, 138, 0.1));
-        border: 1px solid rgba(255, 107, 53, 0.3);
-        border-radius: 12px;
-        padding: 1rem 1.25rem;
-        margin: 1rem 0;
-    ">
-        <p style="color: #F1F5F9; font-size: 0.95rem; font-weight: 500; margin: 0 0 0.5rem 0;">
-            🏛️ Rate Government Performance
-        </p>
-        <p style="color: #94A3B8; font-size: 0.85rem; margin: 0;">
-            Based on the information above, how satisfied are you with the Dutch government's performance on this topic?
-        </p>
-    </div>
-    """,
-                unsafe_allow_html=True)
+    """Render the satisfaction rating prompt using a 5-point Likert scale."""
+    st.markdown(
+        """
+        <div style="
+            background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(30, 58, 138, 0.1));
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            margin: 1rem 0;
+        ">
+            <p style="color: #F1F5F9; font-size: 0.95rem; font-weight: 500; margin: 0 0 0.5rem 0;">
+                🏛️ Rate Government Performance
+            </p>
+            <p style="color: #94A3B8; font-size: 0.85rem; margin: 0;">
+                Based on the information above, how satisfied are you with the Dutch government's performance on this topic?
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     col_left, col_mid, col_right = st.columns([1, 8, 1])
+
     with col_left:
         st.caption("😞")
+
     with col_mid:
-        satisfaction = st.slider(
-            "Rate government performance",
-            min_value=0,
-            max_value=10,
-            value=5,
+        LIKERT_OPTIONS = [
+            "Very dissatisfied",
+            "Dissatisfied",
+            "Neutral",
+            "Satisfied",
+            "Very satisfied",
+        ]
+
+        likert_value = st.radio(
+            "How satisfied are you with the Dutch government's performance on this topic?",
+            LIKERT_OPTIONS,
+            index=2,  # Neutral default
             key=f"satisfaction_{message_index}",
+            horizontal=True,
             label_visibility="collapsed",
-            help=
-            "0 = Very dissatisfied, 10 = Very satisfied with government performance"
         )
+
+        LIKERT_TO_SCORE = {
+            "Very dissatisfied": 1,
+            "Dissatisfied": 2,
+            "Neutral": 3,
+            "Satisfied": 4,
+            "Very satisfied": 5,
+        }
+
+        satisfaction = LIKERT_TO_SCORE[likert_value]
+
     with col_right:
         st.caption("😊")
 
     col1, col2 = st.columns([1, 4])
+
     with col1:
         if st.button("Submit",
                      key=f"submit_rating_{message_index}",
                      type="primary"):
             st.session_state.current_satisfaction = satisfaction
+            st.session_state.current_satisfaction_label = likert_value
             st.session_state.awaiting_rating = False
             st.session_state.last_rated_index = message_index
 
             # Run Synthesis API Pipeline and save to DB Quant
             saved_to_db = False
             save_error = None
-            
+
             if not DB_AVAILABLE:
                 save_error = "Database module not available"
             elif not is_database_connected():
@@ -242,8 +216,10 @@ def render_satisfaction_prompt(message_index: int) -> None:
                     save_error = "No chat history to save"
                 else:
                     # Get the last user prompt and LLM response for synthesis
-                    user_prompt = st.session_state.chat_history[-2].get('content', '')
-                    llm_response = st.session_state.chat_history[-1].get('content', '')
+                    user_prompt = st.session_state.chat_history[-2].get(
+                        'content', '')
+                    llm_response = st.session_state.chat_history[-1].get(
+                        'content', '')
 
                     # Call Synthesis API → Correlation → Verification → DB Store
                     # Note: Raw chat content is NOT stored, only synthesized summary
@@ -261,9 +237,8 @@ def render_satisfaction_prompt(message_index: int) -> None:
                     "Thank you! Your rating has been recorded and verified.",
                     icon="✅")
             else:
-                st.toast(
-                    f"Rating noted locally. {save_error or ''}",
-                    icon="🏛️")
+                st.toast(f"Rating noted locally. {save_error or ''}",
+                         icon="🏛️")
     with col2:
         st.caption("Your rating helps build indicators of government quality.")
 
@@ -468,7 +443,7 @@ def render_end_user_view() -> None:
 
         if st.session_state.get('current_satisfaction'):
             st.metric("Gov. Satisfaction",
-                      f"{st.session_state.current_satisfaction}/10")
+                      f"{st.session_state.current_satisfaction}/5")
 
         # Model info
         st.markdown("---")
