@@ -1,5 +1,5 @@
 """
-End-User View for the Quality of Dutch Government application.
+End-Users View for the Quality of Dutch Government application.
 Provides a chat interface for users to interact with the LLM system
 and rate their satisfaction with responses.
 """
