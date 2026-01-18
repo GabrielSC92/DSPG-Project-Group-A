@@ -11,13 +11,12 @@ from datetime import datetime
 
 # Try to import database functions
 try:
-    from utils.database import (
-        authenticate_user_db, 
-        get_user_by_email, 
-        is_database_connected,
-        update_user_interaction_count as db_update_interaction_count,
-        update_user_satisfaction_baseline as db_update_satisfaction_baseline
-    )
+    from utils.database import (authenticate_user_db, get_user_by_email,
+                                is_database_connected,
+                                update_user_interaction_count as
+                                db_update_interaction_count,
+                                update_user_satisfaction_baseline as
+                                db_update_satisfaction_baseline)
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
@@ -39,7 +38,7 @@ DEMO_USERS = {
         "password_hash": DEMO_PASSWORD_HASH,
         "access_level": "U",
         "created_date": "2024-01-01",
-        "satisfaction_baseline": 5.0,
+        "satisfaction_baseline": 3.0,  # Midpoint of 1-5 Likert scale
         "interaction_count": 0
     },
     "researcher@demo.nl": {
@@ -76,7 +75,7 @@ def init_session_state() -> None:
         'debug_mode': False,
         'using_database': False
     }
-    
+
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
@@ -99,7 +98,8 @@ def _convert_access_level(access_level_str: str) -> AccessLevel:
     return AccessLevel.END_USER
 
 
-def authenticate_user(email: str, password: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+def authenticate_user(email: str,
+                      password: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """
     Authenticate a user with email and password.
     Tries database first, falls back to demo users.
@@ -112,25 +112,27 @@ def authenticate_user(email: str, password: str) -> Tuple[bool, Optional[Dict[st
         Tuple of (success: bool, user_data: dict or None)
     """
     email = email.lower().strip()
-    
+
     # Try database authentication first
     if DB_AVAILABLE and is_database_connected():
         success, user_data = authenticate_user_db(email, password)
         if success and user_data:
             # Convert access_level string to enum
-            user_data['access_level'] = _convert_access_level(user_data.get('access_level', 'U'))
+            user_data['access_level'] = _convert_access_level(
+                user_data.get('access_level', 'U'))
             st.session_state.using_database = True
             return True, user_data
-    
+
     # Fallback to demo users
     if email in DEMO_USERS:
         user = DEMO_USERS[email]
         if verify_password(password, user['password_hash']):
             user_data = {k: v for k, v in user.items() if k != 'password_hash'}
-            user_data['access_level'] = _convert_access_level(user_data.get('access_level', 'U'))
+            user_data['access_level'] = _convert_access_level(
+                user_data.get('access_level', 'U'))
             st.session_state.using_database = False
             return True, user_data
-    
+
     return False, None
 
 
@@ -147,25 +149,26 @@ def login_user(email: str, password: str) -> Tuple[bool, str]:
     """
     # Track login attempts
     st.session_state.login_attempts += 1
-    
+
     # Check for too many attempts
     if st.session_state.login_attempts > 5:
         return False, "Too many login attempts. Please try again later."
-    
+
     # Authenticate
     success, user_data = authenticate_user(email, password)
-    
+
     if success and user_data:
         st.session_state.authenticated = True
         st.session_state.user = user_data
         st.session_state.access_level = user_data['access_level']
         st.session_state.login_attempts = 0
-        
+
         # Log successful login
-        access_str = "Researcher" if user_data['access_level'] == AccessLevel.RESEARCHER else "End User"
+        access_str = "Researcher" if user_data[
+            'access_level'] == AccessLevel.RESEARCHER else "End User"
         db_status = "(DB)" if st.session_state.using_database else "(Demo)"
         return True, f"Welcome! Access level: {access_str} {db_status}"
-    
+
     return False, "Invalid email or password. Please try again."
 
 
@@ -217,7 +220,7 @@ def update_interaction_count() -> None:
     if user and 'interaction_count' in user:
         user['interaction_count'] = (user['interaction_count'] or 0) + 1
         st.session_state.user = user
-        
+
         # Also update in database if connected
         if st.session_state.get('using_database') and DB_AVAILABLE:
             db_update_interaction_count(user['user_id'])
@@ -235,7 +238,7 @@ def update_satisfaction_baseline(new_baseline: float) -> None:
     if user:
         user['satisfaction_baseline'] = new_baseline
         st.session_state.user = user
-        
+
         # Also update in database if connected
         if st.session_state.get('using_database') and DB_AVAILABLE:
             db_update_satisfaction_baseline(user['user_id'], new_baseline)
