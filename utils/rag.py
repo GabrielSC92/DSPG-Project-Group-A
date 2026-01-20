@@ -2,7 +2,8 @@ from typing import List, Dict, Any
 from sqlalchemy import text
 from utils.database import get_engine
 
-def retrieve_chunks(query: str, k: int = 6) -> List[Dict[str, Any]]:
+def retrieve_chunks(query: str, k: int = 6, source_folder: str | None = None) -> List[Dict[str, Any]]:
+
     """
     Retrieve top-k chunks from rag_chunks using naive keyword matching (LIKE).
     Returns dicts with chunk_text + metadata.
@@ -25,6 +26,12 @@ def retrieve_chunks(query: str, k: int = 6) -> List[Dict[str, Any]]:
 
     where_clause = " OR ".join(conditions)
 
+    #topic filter te reduce
+    topic_filter_sql = ""
+    if source_folder and source_folder != "All topics":
+        topic_filter_sql = " AND d.source_folder = :source_folder"
+        params["source_folder"] = source_folder
+
     sql = f"""
     SELECT
         c.chunk_text AS chunk_text,
@@ -35,6 +42,7 @@ def retrieve_chunks(query: str, k: int = 6) -> List[Dict[str, Any]]:
     FROM rag_chunks c
     JOIN rag_documents d ON d.id = c.document_id
     WHERE {where_clause}
+    {topic_filter_sql}
     LIMIT :k
     """
 

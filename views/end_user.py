@@ -19,6 +19,7 @@ except ImportError:
     DB_AVAILABLE = False
 
 
+
 def render_api_status() -> bool:
     """
     Render the API connection status and return whether it's configured.
@@ -367,6 +368,66 @@ def render_end_user_view() -> None:
         if current_index > st.session_state.last_rated_index:
             render_satisfaction_prompt(current_index)
 
+    #topics for filter
+    TOPICS = [
+        "All topics",
+        "Defence",
+        "Finance",
+        "Education",
+        "Health",
+        "Justice",
+        "Foreign",
+        "Domestic",
+        "Audit Office",
+    ]
+
+    if "selected_topic" not in st.session_state:
+        st.session_state.selected_topic = "All topics"
+
+    # Styling for the selectbox near the chat
+    st.markdown("""
+    <style>
+        .topic-composer {
+            background: rgba(15, 23, 42, 0.35);
+            border: 1px solid rgba(51, 65, 85, 0.8);
+            border-radius: 14px;
+            padding: 12px 14px;
+            margin-top: 8px;
+            margin-bottom: 10px;
+            backdrop-filter: blur(10px);
+        }
+        .topic-caption {
+            color: #94A3B8;
+            font-size: 0.8rem;
+            margin-top: 6px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 💬 Ask a question")
+
+    with st.container():
+        st.markdown('<div class="topic-composer">', unsafe_allow_html=True)
+
+        col_topic, col_hint = st.columns([3, 2])
+        with col_topic:
+            st.session_state.selected_topic = st.selectbox(
+                "Topic (limits which documents are searched)",
+                TOPICS,
+                index=TOPICS.index(st.session_state.selected_topic),
+                label_visibility="collapsed",
+            )
+
+        with col_hint:
+            st.markdown(
+                '<div class="topic-caption">Filters the document database for retrieval.</div>',
+                unsafe_allow_html=True
+            )
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+    
     # Chat input (only enabled if API is ready)
     if api_ready:
         if prompt := st.chat_input(
@@ -394,7 +455,11 @@ def render_end_user_view() -> None:
                 # Get response from Agent → LLM pipeline
                 with st.chat_message("assistant", avatar="🏛️"):
                     with st.spinner("Agent analyzing query..."):
-                        success, response, synthesis_data = send_message(prompt)
+                        success, response, synthesis_data = send_message(
+                            prompt,
+                            topic=st.session_state.selected_topic
+                        )
+
 
                         # Store synthesis data for later use when user submits satisfaction
                         if synthesis_data:

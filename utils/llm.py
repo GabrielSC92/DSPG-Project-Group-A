@@ -377,7 +377,7 @@ def get_backend_info() -> Dict[str, str]:
         }
 
 
-def send_message(prompt: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+def send_message(prompt: str, topic: Optional[str] = None) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
     Main pipeline - works with both Ollama and Gemini.
     
@@ -397,10 +397,11 @@ def send_message(prompt: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
 
     # STEP 2: Retrieve from database (local, no API)
     search_terms = agent_result["search_terms"]
-    chunks = retrieve_chunks(" ".join(search_terms), k=6)
+    chunks = retrieve_chunks(" ".join(search_terms), k=6, source_folder=topic)
+
 
     if not chunks:
-        chunks = retrieve_chunks(prompt, k=6)
+        chunks = retrieve_chunks(prompt, k=6, source_folder=topic)
 
     context = format_context(chunks)
 
@@ -416,6 +417,7 @@ def send_message(prompt: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
 
     metadata = {
         "backend": LLM_BACKEND,
+        "topic": topic,
         "search_terms": search_terms,
         "num_chunks": len(chunks)
     }

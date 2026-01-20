@@ -351,7 +351,6 @@ def render_signup_dialog():
                 if success:
                     st.success(
                         "✅ Account created successfully! You can now log in.")
-                    st.balloons()
                     # Note: Don't auto-login, let them use the login form
                 else:
                     st.error(f"❌ Registration failed: {message}")

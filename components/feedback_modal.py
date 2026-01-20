@@ -109,7 +109,7 @@ def render_feedback_modal() -> None:
                     print(f"FEEDBACK SUBMITTED: {feedback_data}")
                     
                     st.success("✅ Thank you! Your feedback has been submitted successfully.")
-                    st.balloons()
+                    
                     
                     # Close modal after brief delay
                     st.session_state.show_feedback_modal = False
