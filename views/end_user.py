@@ -381,11 +381,11 @@ def render_end_user_view() -> None:
             # Only process if history length matches what we expect
             # (i.e., we haven't already added messages for this prompt)
             if current_history_len == expected_len:
-                # Add user message to history
+            # Add user message to history
                 st.session_state.chat_history.append({
                     "role": "user",
                     "content": prompt
-                })
+            })
 
                 # Display user message
                 with st.chat_message("user", avatar="🧑‍💻"):
@@ -394,9 +394,7 @@ def render_end_user_view() -> None:
                 # Get response from Agent → LLM pipeline
                 with st.chat_message("assistant", avatar="🏛️"):
                     with st.spinner("Agent analyzing query..."):
-                        # send_message returns (success, response, synthesis_data)
-                        success, response, synthesis_data = send_message(
-                            prompt)
+                        success, response, synthesis_data = send_message(prompt)
 
                         # Store synthesis data for later use when user submits satisfaction
                         if synthesis_data:
@@ -404,22 +402,14 @@ def render_end_user_view() -> None:
 
                         if success:
                             st.markdown(response)
-                            # Add assistant message to history
-                            st.session_state.chat_history.append({
-                                "role":
-                                "assistant",
-                                "content":
-                                response
-                            })
                         else:
-                            # Failed check - show the failure message (still from LLM)
                             st.warning(response)
-                            st.session_state.chat_history.append({
-                                "role":
-                                "assistant",
-                                "content":
-                                response
-                            })
+
+                        # Add assistant message to history (ALWAYS)
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": response
+                        })
 
                 # Update processed count AFTER adding both messages
                 st.session_state.processed_message_count += 1
@@ -429,6 +419,10 @@ def render_end_user_view() -> None:
 
                 # Set flag for satisfaction rating
                 st.session_state.awaiting_rating = True
+
+                #force rerun so the prompt block above actually renders now
+                st.rerun()
+
 
     else:
         st.chat_input("Chat disabled - configure API key first",

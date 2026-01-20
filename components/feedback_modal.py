@@ -113,6 +113,7 @@ def render_feedback_modal() -> None:
                     
                     # Close modal after brief delay
                     st.session_state.show_feedback_modal = False
+                    st.rerun()
                     
                 else:
                     st.error("⚠️ Please provide at least 10 characters of feedback.")
