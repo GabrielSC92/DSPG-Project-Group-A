@@ -24,6 +24,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from utils.database import get_session  # uses DATABASE_URL / DB_PATH from .env
+from utils.llm import summarize_text  # Import summary function
 
 # Import your models (must exist in utils/database.py)
 from utils.database import RagDocument, RagChunk  # noqa: F401
@@ -96,9 +97,9 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
-def upsert_document(session, doc_key: str, source_folder: str, file_name: str, file_path: str) -> int:
+def upsert_document(session, doc_key: str, source_folder: str, file_name: str, file_path: str, summary: str | None = None) -> int:
     """
-    Create document row if missing, otherwise update basic metadata.
+    Create document row if missing, otherwise update basic metadata and summary.
     Returns RagDocument.id
     """
     doc = session.query(RagDocument).filter(RagDocument.doc_key == doc_key).one_or_none()
@@ -107,15 +108,18 @@ def upsert_document(session, doc_key: str, source_folder: str, file_name: str, f
             doc_key=doc_key,
             source_folder=source_folder,
             file_name=file_name,
-            file_path=file_path
+            file_path=file_path,
+            summary=summary
         )
         session.add(doc)
         session.flush()  # get doc.id
     else:
-        # keep it updated if file moved/renamed
+        # keep it updated if file moved/renamed or summary changed
         doc.source_folder = source_folder
         doc.file_name = file_name
         doc.file_path = file_path
+        if summary:
+            doc.summary = summary
         session.flush()
 
     return doc.id
@@ -185,6 +189,7 @@ def main():
 
     print(f"[*] Ingest starting: {len(pdfs)} PDF(s) from {root}")
     print(f"[*] Chunking: size={args.chunk_size}, overlap={args.overlap}")
+    print(f"[*] Summaries will be generated during ingestion\n")
 
     try:
         for pdf_path in pdfs:
@@ -203,7 +208,16 @@ def main():
                     print(f"[!] Skipping (no text): {doc_key}")
                     continue
 
-                doc_id = upsert_document(session, doc_key, source_folder, file_name, file_path)
+                # Generate summary from full text
+                print(f"[*] Summarizing {file_name}...", end=" ", flush=True)
+                summary_ok, summary = summarize_text(text)
+                if summary_ok:
+                    print("✓")
+                else:
+                    print(f"✗ ({summary})")
+                    summary = None
+
+                doc_id = upsert_document(session, doc_key, source_folder, file_name, file_path, summary=summary)
                 inserted = replace_chunks_for_document(session, doc_id, chunks)
 
                 session.commit()
