@@ -25,7 +25,7 @@ import re
 import requests
 from typing import Optional, Tuple, List, Dict, Any
 
-from utils.rag import retrieve_chunks, format_context, format_sources_list
+from utils.rag import retrieve_chunks, format_context, format_sources_list, retrieve_summaries, format_summaries
 
 load_dotenv()
 
@@ -50,15 +50,29 @@ GEMINI_API_KEY_AGENT = os.getenv("GEMINI_API_KEY_AGENT")
 
 AGENT_SYSTEM_PROMPT = """You are a retrieval agent for a Dutch Government research platform.
 
-Analyze the user query and respond with ONLY a JSON object:
+TASK: Analyze the user query and the available documents. Return ONLY a valid JSON object with:
+- "valid": true if query is about Dutch government (else false)
+- "reason": explanation if invalid
+- "search_terms": list of 2-5 search terms extracted from query
+- "relevant_document_ids": list of document IDs from AVAILABLE DOCUMENTS that match the query
+
+IMPORTANT: Look at each AVAILABLE DOCUMENT's summary. If it mentions topics related to the user query, include its ID.
+
+Example response:
 {
-    "valid": true/false,
-    "reason": "brief reason if invalid",
-    "search_terms": ["term1", "term2", "term3"]
+    "valid": true,
+    "reason": "",
+    "search_terms": ["defence", "budget", "2026"],
+    "relevant_document_ids": [1, 2]
 }
 
-Invalid: unrelated to Dutch government, harmful, too vague.
-Valid: Dutch government audits, policy, ministries, performance."""
+Example if no docs match:
+{
+    "valid": true,
+    "reason": "",
+    "search_terms": ["education", "reform"],
+    "relevant_document_ids": []
+}"""
 
 LLM_SYSTEM_PROMPT = """You are an AI assistant for the Quality of Dutch Government research platform.
 Help users understand Dutch government audit reports and performance indicators.
@@ -83,7 +97,7 @@ def _ollama_available() -> bool:
         return False
 
 
-def _ollama_generate(prompt: str, system: str = "") -> Tuple[bool, str]:
+def _ollama_generate(prompt: str, system: str = "", timeout: int = 120) -> Tuple[bool, str]:
     """Generate response using Ollama."""
     try:
         payload = {
@@ -102,7 +116,7 @@ def _ollama_generate(prompt: str, system: str = "") -> Tuple[bool, str]:
         r = requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json=payload,
-            timeout=120  # Local models can be slow
+            timeout=timeout  # Configurable timeout
         )
 
         if r.status_code == 200:
@@ -215,23 +229,39 @@ def _gemini_chat(prompt: str, system: str = "") -> Tuple[bool, str]:
 # =============================================================================
 
 
-def _call_agent(prompt: str) -> Dict[str, Any]:
+def _call_agent(prompt: str, summaries: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
     """
     Call agent to validate query and extract search terms.
+    Also performs document filtering based on summaries.
     Uses configured backend (Ollama or Gemini).
+    
+    Args:
+        prompt: User query
+        summaries: Optional list of document summaries for filtering
     """
     default = {
         "valid": True,
         "reason": "",
-        "search_terms": _extract_keywords_local(prompt)
+        "search_terms": _extract_keywords_local(prompt),
+        "relevant_document_ids": []
     }
 
+    # Include summaries in agent prompt for smart filtering (truncate to keep prompt size reasonable)
+    summaries_text = ""
+    if summaries:
+        summaries_text = "\nAVAILABLE DOCUMENTS:\n"
+        for doc in summaries[:10]:  # Limit to top 10 to avoid timeout
+            summary_snippet = doc.get('summary', 'No summary')[:100]  # Truncate to 100 chars
+            summaries_text += f"- ID {doc['document_id']}: {doc['file_name']}\n  {summary_snippet}...\n"
+
     agent_prompt = f"""{AGENT_SYSTEM_PROMPT}
+
+{summaries_text}
 
 User query: {prompt}"""
 
     if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(agent_prompt)
+        success, response = _ollama_generate(agent_prompt, timeout=300)  # 5 minute timeout for agent
     else:
         success, response = _gemini_generate(agent_prompt, use_agent_key=True)
 
@@ -246,8 +276,8 @@ User query: {prompt}"""
             return {
                 "valid": data.get("valid", True),
                 "reason": data.get("reason", ""),
-                "search_terms": data.get("search_terms",
-                                         default["search_terms"])
+                "search_terms": data.get("search_terms", default["search_terms"]),
+                "relevant_document_ids": data.get("relevant_document_ids", [])
             }
     except:
         pass
@@ -292,6 +322,46 @@ Answer based on the context above. Cite sources as [SOURCE 1], [SOURCE 2], etc."
         return success, response
     else:
         return _gemini_chat(full_prompt, system=LLM_SYSTEM_PROMPT)
+
+
+def summarize_text(text: str, max_length: int = 300) -> Tuple[bool, str]:
+    """
+    Generate a summary of the given text using the configured LLM backend.
+    
+    Args:
+        text: The text to summarize (e.g., full PDF content)
+        max_length: Target length for summary in words
+        
+    Returns:
+        Tuple of (success: bool, summary: str)
+    """
+    if not text or len(text.strip()) == 0:
+        return False, "Empty text provided"
+    
+    # Truncate to avoid token limits and timeout issues
+    # Using 2000 chars covers most executive summaries while keeping inference fast
+    truncated_text = text[:2000] if len(text) > 2000 else text
+    
+    summary_prompt = f"""Provide a concise summary of the following government audit/policy document in approximately {max_length} words.
+Focus on key findings, recommendations, and main topics.
+Be objective and professional.
+
+DOCUMENT:
+{truncated_text}
+
+SUMMARY:"""
+
+    if LLM_BACKEND == "ollama":
+        success, response = _ollama_generate(summary_prompt)
+    else:
+        success, response = _gemini_generate(summary_prompt)
+    
+    if success:
+        # Clean up response
+        summary = response.strip()
+        return True, summary
+    else:
+        return False, response
 
 
 def _extract_keywords_local(prompt: str) -> List[str]:
@@ -380,12 +450,16 @@ def get_backend_info() -> Dict[str, str]:
 def send_message(prompt: str, topic: Optional[str] = None) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
     Main pipeline - works with both Ollama and Gemini.
+    Implements smart filtering: Agent reads summaries, selects relevant docs, retrieves chunks from only those.
     
     Returns:
         (success, response_text, metadata)
     """
-    # STEP 1: Agent - validate and extract search terms
-    agent_result = _call_agent(prompt)
+    # STEP 1: Retrieve all available summaries for agent to filter
+    summaries = retrieve_summaries(" ", k=100, source_folder=topic)  # Get all summaries
+    
+    # STEP 2: Agent - validate query and filter relevant documents
+    agent_result = _call_agent(prompt, summaries)
 
     if not agent_result["valid"]:
         return False, (
@@ -395,17 +469,29 @@ def send_message(prompt: str, topic: Optional[str] = None) -> Tuple[bool, str, O
             "- Ministry performance and budgets\n"
             "- Policy evaluations"), None
 
-    # STEP 2: Retrieve from database (local, no API)
+    # STEP 3: Retrieve chunks only from documents agent deemed relevant
     search_terms = agent_result["search_terms"]
-    chunks = retrieve_chunks(" ".join(search_terms), k=6, source_folder=topic)
+    relevant_doc_ids = agent_result.get("relevant_document_ids", [])
+    
+    # If agent filtered documents, use only those
+    if relevant_doc_ids:
+        chunks = retrieve_chunks(" ".join(search_terms), k=12, source_folder=topic, document_ids=relevant_doc_ids)
+    else:
+        # Fallback 1: if agent didn't filter but summaries exist, use document IDs from summaries
+        if summaries:
+            summary_doc_ids = [s["document_id"] for s in summaries]
+            chunks = retrieve_chunks(" ".join(search_terms), k=12, source_folder=topic, document_ids=summary_doc_ids)
+        else:
+            # Fallback 2: no summaries, retrieve normally
+            chunks = retrieve_chunks(" ".join(search_terms), k=6, source_folder=topic)
+        
+        if not chunks:
+            chunks = retrieve_chunks(prompt, k=6, source_folder=topic)
 
+    # Build context from filtered chunks only
+    context = format_context(chunks) if chunks else ""
 
-    if not chunks:
-        chunks = retrieve_chunks(prompt, k=6, source_folder=topic)
-
-    context = format_context(chunks)
-
-    # STEP 3: LLM - generate response
+    # STEP 4: LLM - generate response
     success, response = _call_llm(prompt, context)
 
     if not success:
@@ -419,7 +505,8 @@ def send_message(prompt: str, topic: Optional[str] = None) -> Tuple[bool, str, O
         "backend": LLM_BACKEND,
         "topic": topic,
         "search_terms": search_terms,
-        "num_chunks": len(chunks)
+        "num_chunks": len(chunks),
+        "documents_filtered": len(relevant_doc_ids)
     }
 
     return True, response, metadata
