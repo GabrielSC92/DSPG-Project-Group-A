@@ -50,7 +50,7 @@ def generate_demo_data(n_rows: int = 200) -> pd.DataFrame:
         "Satisfaction (Raw)": [random.randint(1, 10) for _ in range(n_rows)],
         "Satisfaction (Normalized)":
         [round(random.uniform(0, 1), 3) for _ in range(n_rows)],
-        "Correlation Index":
+        "Response Quality Score":
         [round(random.uniform(0.5, 1.0), 3) for _ in range(n_rows)],
         "Verified": [random.choice([True, False]) for _ in range(n_rows)],
         "Source": [random.choice(sources) for _ in range(n_rows)]
@@ -283,7 +283,7 @@ with st.expander("Generate Summary Statistics Report"):
         "Metric": [
             "Total Records", "Unique Users", "Date Range",
             "Mean Satisfaction (Raw)", "Median Satisfaction (Raw)",
-            "Mean Correlation Index", "Verified Records %",
+            "Mean Quality Score (RQS)", "Verified Records %",
             "Most Common Topic", "Most Common Source"
         ],
         "Value": [
@@ -292,7 +292,7 @@ with st.expander("Generate Summary Statistics Report"):
             f"{filtered_df['Date'].min().strftime('%Y-%m-%d')} to {filtered_df['Date'].max().strftime('%Y-%m-%d')}",
             f"{filtered_df['Satisfaction (Raw)'].mean():.2f}",
             f"{filtered_df['Satisfaction (Raw)'].median():.1f}",
-            f"{filtered_df['Correlation Index'].mean():.3f}",
+            f"{filtered_df['Response Quality Score'].mean():.3f}",
             f"{(filtered_df['Verified'].sum() / len(filtered_df) * 100):.1f}%",
             filtered_df['Topic Summary'].mode().iloc[0] if len(filtered_df) > 0
             else "N/A", filtered_df['Source'].mode().iloc[0]

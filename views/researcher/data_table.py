@@ -58,7 +58,7 @@ def load_from_database() -> pd.DataFrame:
             'summary': 'Topic Summary',
             'satisfaction_raw': 'Satisfaction (Raw)',
             'satisfaction_normalized': 'Satisfaction (Normalized)',
-            'correlation_index': 'Correlation Index',
+            'correlation_index': 'Response Quality Score',
             'verification_flag': 'Verified'
         })
 
@@ -101,7 +101,7 @@ def generate_demo_data(n_rows: int = 100) -> pd.DataFrame:
         "Satisfaction (Raw)": [random.randint(1, 5) for _ in range(n_rows)],
         "Satisfaction (Normalized)":
         [round(random.uniform(0, 1), 3) for _ in range(n_rows)],
-        "Correlation Index":
+        "Response Quality Score":
         [round(random.uniform(0.5, 1.0), 3) for _ in range(n_rows)],
         "Verified": [random.choice([True, False]) for _ in range(n_rows)],
         "Source": [
@@ -202,11 +202,31 @@ if search_term:
 
 st.markdown("---")
 
+# --- METRICS EXPLANATION ---
+with st.expander(":material/info: Understanding the Response Quality Score (RQS)", expanded=False):
+    st.markdown("""
+    The **Response Quality Score** measures how well the system answered a user's question. 
+    It is calculated based on several factors:
+    
+    | Factor | Weight | Description |
+    |--------|--------|-------------|
+    | **Source Citations** | up to 0.30 | +0.05 for each source cited in the response |
+    | **Response Length** | up to 0.25 | +0.15 if >500 chars, +0.10 more if >1000 chars |
+    | **Lexical Overlap** | up to 0.30 | +0.03 per word shared between query and response |
+    | **No Info Penalty** | -0.20 | Deducted if system couldn't find relevant info |
+    
+    **Score interpretation:**
+    - **≥0.30**: Verified response (✅) — Good source coverage and relevance
+    - **<0.30**: Unverified response (❌) — May lack sources or relevance
+    
+    *Note: This is a heuristic quality measure, not a statistical correlation.*
+    """)
+
 # --- METRICS ROW ---
 # Calculate metrics
 avg_satisfaction = filtered_df["Satisfaction (Raw)"].mean() if len(
     filtered_df) > 0 else 0
-avg_correlation = filtered_df["Correlation Index"].mean() if len(
+avg_quality_score = filtered_df["Response Quality Score"].mean() if len(
     filtered_df) > 0 else 0
 verified_pct = (filtered_df["Verified"].sum() / len(filtered_df) *
                 100) if len(filtered_df) > 0 else 0
@@ -229,11 +249,11 @@ metrics = [
         "help_text": "Average satisfaction score across filtered records"
     },
     {
-        "label": "Avg. Correlation",
-        "value": f"{avg_correlation:.3f}",
+        "label": "Avg. Quality Score",
+        "value": f"{avg_quality_score:.3f}",
         "icon": "",
         "color": "#8b5cf6",
-        "help_text": "Average correlation index for filtered records"
+        "help_text": "Average Response Quality Score (RQS) — measures source citations, response length, and relevance"
     },
     {
         "label": "Verified %",
@@ -280,8 +300,8 @@ column_config = {
                                     format="%d/5"),
     "Satisfaction (Normalized)":
     st.column_config.NumberColumn("Norm. Score", format="%.3f"),
-    "Correlation Index":
-    st.column_config.ProgressColumn("Correlation",
+    "Response Quality Score":
+    st.column_config.ProgressColumn("Quality (RQS)",
                                     min_value=0,
                                     max_value=1,
                                     format="%.2f"),

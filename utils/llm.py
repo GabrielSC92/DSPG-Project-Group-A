@@ -884,7 +884,17 @@ def _create_local_summary(response: str) -> str:
 
 
 def _compute_correlation(prompt: str, response: str) -> float:
-    """Compute correlation score locally."""
+    """
+    Compute Response Quality Score (RQS) locally.
+    
+    This is a heuristic score (0.0-1.0) measuring response quality based on:
+    - Source citations: +0.05 per [SOURCE] citation (max 0.30)
+    - Response length: +0.15 if >500 chars, +0.10 more if >1000 chars
+    - Lexical overlap: +0.03 per shared word between prompt and response (max 0.30)
+    - Penalty: -0.20 if "no relevant" found (indicates failed retrieval)
+    
+    A score >= 0.30 marks the response as "Verified" (V).
+    """
     score = 0.0
 
     if "[SOURCE" in response:

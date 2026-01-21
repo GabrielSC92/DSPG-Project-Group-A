@@ -47,7 +47,7 @@ def generate_demo_data(n_rows: int = 200) -> pd.DataFrame:
         ],
         "Topic": [random.choice(topics) for _ in range(n_rows)],
         "Satisfaction": [random.randint(1, 10) for _ in range(n_rows)],
-        "Correlation":
+        "Quality Score":
         [round(random.uniform(0.5, 1.0), 3) for _ in range(n_rows)],
         "Source": [random.choice(sources) for _ in range(n_rows)],
         "Verified": [random.choice([True, False]) for _ in range(n_rows)]
@@ -78,7 +78,7 @@ with col1:
         key="chart_type")
 
 with col2:
-    metric = st.selectbox("Metric", ["Satisfaction", "Correlation"],
+    metric = st.selectbox("Metric", ["Satisfaction", "Quality Score"],
                           key="metric_select")
 
 with col3:
@@ -282,7 +282,7 @@ elif chart_type == "Correlation":
     st.markdown("### :material/grid_on: Correlation Heatmap")
 
     # Create correlation matrix by topic
-    pivot_df = filtered_df.pivot_table(values=["Satisfaction", "Correlation"],
+    pivot_df = filtered_df.pivot_table(values=["Satisfaction", "Quality Score"],
                                        index="Topic",
                                        aggfunc="mean")
 
@@ -320,10 +320,10 @@ elif chart_type == "Correlation":
 
     st.plotly_chart(fig_heatmap, use_container_width=True)
 
-    # Scatter plot: Satisfaction vs Correlation
-    st.markdown("### :material/bar_chart: Satisfaction vs Correlation Index")
+    # Scatter plot: Satisfaction vs Quality Score
+    st.markdown("### :material/bar_chart: Satisfaction vs Quality Score")
     fig_scatter = px.scatter(filtered_df,
-                             x="Correlation",
+                             x="Quality Score",
                              y="Satisfaction",
                              color="Topic",
                              size="Satisfaction",
