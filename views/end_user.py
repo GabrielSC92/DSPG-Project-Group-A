@@ -17,11 +17,10 @@ try:
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
-    
+
     def get_available_topics():
         """Fallback if database not available."""
         return []
-
 
 
 def render_api_status() -> bool:
@@ -228,14 +227,19 @@ def render_satisfaction_prompt(message_index: int) -> None:
 
                     # Call Synthesis API → Correlation → Verification → DB Store
                     # Note: Raw chat content is NOT stored, only synthesized summary
-                    # Pass the selected topic to be stored in the summary field
-                    selected_topic = st.session_state.get('selected_topic', 'All topics')
+                    # Pass the selected topic and matched subtopics for the summary
+                    selected_topic = st.session_state.get(
+                        'selected_topic', 'All topics')
+                    last_data = st.session_state.get('last_synthesis_data', {})
+                    matched_subtopics = last_data.get('matched_subtopics',
+                                                      []) if last_data else []
                     success, result = run_synthesis_and_store(
                         user_prompt=user_prompt,
                         llm_response=llm_response,
                         satisfaction=float(satisfaction),
                         user_id=user_id,
-                        topic=selected_topic)
+                        topic=selected_topic,
+                        matched_subtopics=matched_subtopics)
                     saved_to_db = success
                     if not success:
                         save_error = result
@@ -380,21 +384,22 @@ def render_end_user_view() -> None:
     def load_topics():
         """Load available topics from database."""
         topics_list = ["All topics"]  # Always include "All topics" option
-        
+
         if DB_AVAILABLE:
             db_topics = get_available_topics()
             if db_topics:
                 # Add English labels from database
                 for topic in db_topics:
-                    label = topic.get('label_en', topic.get('source_folder', '').title())
+                    label = topic.get('label_en',
+                                      topic.get('source_folder', '').title())
                     if label and label not in topics_list:
                         topics_list.append(label)
-        
+
         # Fallback: if no topics in DB, use defaults
         if len(topics_list) == 1:
             topics_list.extend([
                 "Defence",
-                "Finance", 
+                "Finance",
                 "Education",
                 "Health",
                 "Justice",
@@ -402,14 +407,14 @@ def render_end_user_view() -> None:
                 "Domestic Affairs",
                 "Audit Office",
             ])
-        
+
         return topics_list
-    
+
     TOPICS = load_topics()
 
     if "selected_topic" not in st.session_state:
         st.session_state.selected_topic = "All topics"
-    
+
     # Ensure selected topic is still valid (in case topics changed)
     if st.session_state.selected_topic not in TOPICS:
         st.session_state.selected_topic = "All topics"
@@ -432,7 +437,8 @@ def render_end_user_view() -> None:
             margin-top: 6px;
         }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+                unsafe_allow_html=True)
 
     st.markdown("### 💬 Ask a question")
 
@@ -451,13 +457,10 @@ def render_end_user_view() -> None:
         with col_hint:
             st.markdown(
                 '<div class="topic-caption">Filters the document database for retrieval.</div>',
-                unsafe_allow_html=True
-            )
+                unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-
-    
     # Chat input (only enabled if API is ready)
     if api_ready:
         if prompt := st.chat_input(
@@ -472,52 +475,52 @@ def render_end_user_view() -> None:
             # Only process if history length matches what we expect
             # (i.e., we haven't already added messages for this prompt)
             if current_history_len == expected_len:
-            # Add user message to history
-                st.session_state.chat_history.append({
-                    "role": "user",
-                    "content": prompt
-            })
+                # First check with Agent if query matches any subtopics
+                with st.spinner("Agent analyzing query..."):
+                    success, response, synthesis_data = send_message(
+                        prompt, topic=st.session_state.selected_topic)
 
-                # Display user message
-                with st.chat_message("user", avatar="🧑‍💻"):
-                    st.markdown(prompt)
+                # If query didn't match sources, show info and don't add to chat
+                if not success:
+                    st.info(response)
+                    st.session_state.awaiting_rating = False
+                    st.session_state.last_synthesis_data = None
+                else:
+                    # Query matched sources - show full chat interaction
+                    # Add user message to history
+                    st.session_state.chat_history.append({
+                        "role": "user",
+                        "content": prompt
+                    })
 
-                # Get response from Agent → LLM pipeline
-                with st.chat_message("assistant", avatar="🏛️"):
-                    with st.spinner("Agent analyzing query..."):
-                        success, response, synthesis_data = send_message(
-                            prompt,
-                            topic=st.session_state.selected_topic
-                        )
+                    # Display user message
+                    with st.chat_message("user", avatar="🧑‍💻"):
+                        st.markdown(prompt)
 
+                    # Display assistant response
+                    with st.chat_message("assistant", avatar="🏛️"):
+                        st.markdown(response)
 
-                        # Store synthesis data for later use when user submits satisfaction
-                        if synthesis_data:
-                            st.session_state.last_synthesis_data = synthesis_data
+                    # Store synthesis data for satisfaction rating
+                    st.session_state.last_synthesis_data = synthesis_data
 
-                        if success:
-                            st.markdown(response)
-                        else:
-                            st.warning(response)
+                    # Add assistant message to history
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response
+                    })
 
-                        # Add assistant message to history (ALWAYS)
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": response
-                        })
+                    # Update processed count
+                    st.session_state.processed_message_count += 1
 
-                # Update processed count AFTER adding both messages
-                st.session_state.processed_message_count += 1
+                    # Update interaction count
+                    update_interaction_count()
 
-                # Update interaction count
-                update_interaction_count()
-
-                # Set flag for satisfaction rating
-                st.session_state.awaiting_rating = True
+                    # Enable satisfaction rating (we only get here if subtopics matched)
+                    st.session_state.awaiting_rating = True
 
                 #force rerun so the prompt block above actually renders now
                 st.rerun()
-
 
     else:
         st.chat_input("Chat disabled - configure API key first",

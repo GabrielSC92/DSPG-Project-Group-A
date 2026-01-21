@@ -765,22 +765,29 @@ def send_message(
             "- Ministry performance and budgets\n"
             "- Policy evaluations"), None
 
-    # STEP 3: Retrieve chunks by subtopic IDs or fallback to keyword search
+    # STEP 3: Check if query matches any subtopics
     search_terms = agent_result["search_terms"]
     relevant_subtopic_ids = agent_result.get("relevant_subtopic_ids", [])
 
-    # If agent selected subtopics, use those for retrieval
-    if relevant_subtopic_ids:
-        chunks = retrieve_chunks_by_subtopics(
-            " ".join(search_terms), subtopic_ids=relevant_subtopic_ids, k=12)
-    else:
-        # Fallback: use keyword-based retrieval with topic filter
-        chunks = retrieve_chunks(" ".join(search_terms),
-                                 k=8,
-                                 source_folder=topic)
+    # If no subtopics matched, block the query - don't call LLM
+    if not relevant_subtopic_ids:
+        return False, (
+            "Your query didn't match any specific documents in our sources.\n\n"
+            "Please try asking about topics covered in our audit reports, such as:\n"
+            "- Defence procurement and budgets\n"
+            "- Ministry financial audits\n"
+            "- Government accountability reports"), None
 
-        if not chunks:
-            chunks = retrieve_chunks(prompt, k=6, source_folder=topic)
+    # Get subtopic labels for the matched IDs (for summary)
+    matched_subtopic_labels = []
+    if subtopics:
+        for st in subtopics:
+            if st.get('subtopic_id') in relevant_subtopic_ids:
+                matched_subtopic_labels.append(st.get('subtopic', 'Unknown'))
+
+    # Retrieve chunks from matched subtopics only
+    chunks = retrieve_chunks_by_subtopics(
+        " ".join(search_terms), subtopic_ids=relevant_subtopic_ids, k=12)
 
     # Build context from filtered chunks only
     context = format_context(chunks) if chunks else ""
@@ -800,7 +807,8 @@ def send_message(
         "topic": topic,
         "search_terms": search_terms,
         "num_chunks": len(chunks),
-        "subtopics_used": len(relevant_subtopic_ids)
+        "subtopics_used": len(relevant_subtopic_ids),
+        "matched_subtopics": matched_subtopic_labels  # For summary
     }
 
     return True, response, metadata
@@ -815,7 +823,8 @@ def synthesize_and_store(user_prompt: str,
                          llm_response: str,
                          satisfaction: float,
                          user_id: str,
-                         topic: Optional[str] = None) -> Tuple[bool, str]:
+                         topic: Optional[str] = None,
+                         matched_subtopics: List[str] = None) -> Tuple[bool, str]:
     """
     Store interaction with local processing (no API calls).
     
@@ -825,6 +834,7 @@ def synthesize_and_store(user_prompt: str,
         satisfaction: User satisfaction score (1-5)
         user_id: The user's ID
         topic: Optional topic selected by the user (will be prepended to summary)
+        matched_subtopics: List of subtopic labels that matched the query
     """
     try:
         from utils.database import save_interaction, is_database_connected
@@ -832,14 +842,16 @@ def synthesize_and_store(user_prompt: str,
         if not is_database_connected():
             return False, "Database not connected"
 
-        # Create summary with topic if provided
-        local_summary = _create_local_summary(llm_response)
-
-        # Include the selected topic in the summary
-        if topic and topic != "All topics":
-            summary = f"[Topic: {topic}] {local_summary}"
+        # Create summary from matched subtopics (preferred) or fallback to local summary
+        if matched_subtopics:
+            # Use matched subtopic labels as summary (limit to first 3)
+            subtopics_str = ", ".join(matched_subtopics[:3])
+            if len(matched_subtopics) > 3:
+                subtopics_str += f" (+{len(matched_subtopics) - 3} more)"
+            summary = f"[Topic: {topic}] {subtopics_str}" if topic and topic != "All topics" else subtopics_str
         else:
-            summary = local_summary
+            # Fallback: query didn't match any subtopics
+            summary = f"[Topic: {topic}] No specific subtopic matched" if topic and topic != "All topics" else "General query (no subtopic matched)"
 
         correlation = _compute_correlation(user_prompt, llm_response)
         flag = 'V' if correlation >= 0.3 else 'U'
