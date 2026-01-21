@@ -8,6 +8,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import random
 
+# Import the metric card component
+from components.single_metric_card import render_metric_row
+
 # Try to import database functions
 try:
     from utils.database import get_all_interactions, is_database_connected
@@ -200,27 +203,55 @@ if search_term:
 st.markdown("---")
 
 # --- METRICS ROW ---
-col1, col2, col3, col4, col5 = st.columns(5)
+# Calculate metrics
+avg_satisfaction = filtered_df["Satisfaction (Raw)"].mean() if len(
+    filtered_df) > 0 else 0
+avg_correlation = filtered_df["Correlation Index"].mean() if len(
+    filtered_df) > 0 else 0
+verified_pct = (filtered_df["Verified"].sum() / len(filtered_df) *
+                100) if len(filtered_df) > 0 else 0
+unique_users = filtered_df["User ID"].nunique()
 
-with col1:
-    st.metric("Total Records", len(filtered_df))
+# Define metrics for the row
+metrics = [
+    {
+        "label": "Total Records",
+        "value": str(len(filtered_df)),
+        "icon": "",
+        "color": "#3b82f6",
+        "help_text": "Total number of records matching the current filters"
+    },
+    {
+        "label": "Avg. Satisfaction",
+        "value": f"{avg_satisfaction:.1f}/5",
+        "icon": "",
+        "color": "#f59e0b",
+        "help_text": "Average satisfaction score across filtered records"
+    },
+    {
+        "label": "Avg. Correlation",
+        "value": f"{avg_correlation:.3f}",
+        "icon": "",
+        "color": "#8b5cf6",
+        "help_text": "Average correlation index for filtered records"
+    },
+    {
+        "label": "Verified %",
+        "value": f"{verified_pct:.1f}%",
+        "icon": "",
+        "color": "#10b981",
+        "help_text": "Percentage of verified records in current selection"
+    },
+    {
+        "label": "Unique Users",
+        "value": str(unique_users),
+        "icon": "",
+        "color": "#6366f1",
+        "help_text": "Number of unique users in filtered data"
+    },
+]
 
-with col2:
-    avg_satisfaction = filtered_df["Satisfaction (Raw)"].mean()
-    st.metric("Avg. Satisfaction", f"{avg_satisfaction:.1f}/5")
-
-with col3:
-    avg_correlation = filtered_df["Correlation Index"].mean()
-    st.metric("Avg. Correlation", f"{avg_correlation:.3f}")
-
-with col4:
-    verified_pct = (filtered_df["Verified"].sum() / len(filtered_df) *
-                    100) if len(filtered_df) > 0 else 0
-    st.metric("Verified %", f"{verified_pct:.1f}%")
-
-with col5:
-    unique_users = filtered_df["User ID"].nunique()
-    st.metric("Unique Users", unique_users)
+render_metric_row(metrics, height=115)
 
 st.markdown("---")
 
@@ -230,10 +261,7 @@ st.markdown("### :material/list: Records")
 # Format the dataframe for display
 display_df = filtered_df.copy()
 display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
-display_df["Verified"] = display_df["Verified"].map({
-    True: ":material/check_circle:",
-    False: ":material/cancel:"
-})
+display_df["Verified"] = display_df["Verified"].map({True: "✅", False: "❌"})
 
 # Column configuration for better display
 column_config = {
