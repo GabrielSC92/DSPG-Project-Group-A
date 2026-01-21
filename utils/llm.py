@@ -806,8 +806,9 @@ def send_message(
     if not success:
         return False, response, None
 
-    # Build sources list (separate from response for UI display in expander)
-    sources_text = format_sources_list(chunks) if chunks else ""
+    # Add sources
+    if chunks:
+        response += "\n\n**Sources:**\n" + format_sources_list(chunks)
 
     metadata = {
         "backend": LLM_BACKEND,
@@ -815,8 +816,7 @@ def send_message(
         "search_terms": search_terms,
         "num_chunks": len(chunks),
         "subtopics_used": len(relevant_subtopic_ids),
-        "matched_subtopics": matched_subtopic_labels,  # For summary
-        "sources": sources_text  # Sources kept separate for UI
+        "matched_subtopics": matched_subtopic_labels  # For summary
     }
 
     return True, response, metadata

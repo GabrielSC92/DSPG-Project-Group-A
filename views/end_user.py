@@ -265,18 +265,13 @@ def render_satisfaction_prompt(message_index: int) -> None:
 
 
 def render_chat_messages() -> None:
-    """Render the chat message history with sources in collapsed expanders."""
+    """Render the chat message history."""
     for i, message in enumerate(st.session_state.chat_history):
         role = message["role"]
         content = message["content"]
-        sources = message.get("sources", "")
 
         with st.chat_message(role, avatar="🧑‍💻" if role == "user" else "🏛️"):
             st.markdown(content)
-            # Show sources in collapsed expander for assistant messages
-            if role == "assistant" and sources:
-                with st.expander("📚 View Sources", expanded=False):
-                    st.markdown(sources)
 
 
 @st.fragment
@@ -383,32 +378,21 @@ def chat_input_fragment(api_ready: bool, topics: list) -> None:
                         "content": prompt
                     })
 
-                    # Extract sources from synthesis data
-                    sources_text = synthesis_data.get(
-                        "sources", "") if synthesis_data else ""
-
                     # Display user message
                     with st.chat_message("user", avatar="🧑‍💻"):
                         st.markdown(prompt)
 
-                    # Display assistant response with sources in expander
+                    # Display assistant response
                     with st.chat_message("assistant", avatar="🏛️"):
                         st.markdown(response)
-                        if sources_text:
-                            with st.expander("📚 View Sources", expanded=False):
-                                st.markdown(sources_text)
 
                     # Store synthesis data for satisfaction rating
                     st.session_state.last_synthesis_data = synthesis_data
 
-                    # Add assistant message to history (with sources for re-rendering)
+                    # Add assistant message to history
                     st.session_state.chat_history.append({
-                        "role":
-                        "assistant",
-                        "content":
-                        response,
-                        "sources":
-                        sources_text
+                        "role": "assistant",
+                        "content": response
                     })
 
                     # Update processed count
