@@ -574,6 +574,38 @@ def render_end_user_view() -> None:
     # Clear chat button in sidebar (outside fragment - sidebar not supported in fragments)
     with st.sidebar:
         st.markdown("---")
+        
+        # Privacy Notice Section
+        with st.expander("🔒 Privacy Notice", expanded=False):
+            st.markdown("""
+            **Your Privacy Matters**
+            
+            This research tool is designed with your privacy in mind:
+            
+            **💬 Chat Data**
+            - Your chat conversations are **not saved** to any database
+            - Messages exist only in your browser session and are cleared when you leave
+            - No personal chat content is stored or shared
+            
+            **📊 Research Data**
+            - Only **anonymized, aggregated summaries** are stored for research
+            - Satisfaction ratings help improve government quality indicators
+            - No individual responses can be traced back to you
+            
+            **🔐 Data Security**
+            - Anonymous session IDs are used (no personal identifiers)
+            - Data is processed in accordance with GDPR regulations
+            - This tool is part of academic research at Utrecht University
+            
+            **🎓 Research Purpose**
+            - Data contributes to the Quality of Government research project
+            - Aims to improve transparency in Dutch government performance
+            - Results may be published in academic contexts (always anonymized)
+            
+            **Questions?** Contact the research team at Utrecht University.
+            """)
+        
+        st.markdown("---")
         if st.button(":material/delete: Clear Chat", use_container_width=True):
             st.session_state.chat_history = []
             st.session_state.awaiting_rating = False
