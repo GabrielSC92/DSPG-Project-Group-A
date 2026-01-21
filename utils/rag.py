@@ -161,13 +161,85 @@ def format_summaries(summaries: List[Dict[str, Any]]) -> str:
 
 
 def format_sources_list(chunks: List[Dict[str, Any]]) -> str:
+    """
+    Format sources into a consolidated list, grouping chunks from the same document.
+    
+    Example output:
+    - [SOURCES 1-5] defensie/rapport.pdf (chunks 0-4)
+    - [SOURCE 6] defensie/other.pdf (chunk 2)
+    - [SOURCES 7, 9-11] defensie/another.pdf (chunks 1, 5-7)
+    """
     if not chunks:
         return ""
-    lines = []
+
+    # Group chunks by file path (source_folder/file_name)
+    # Track: file_path -> [(source_number, chunk_index), ...]
+    file_groups: Dict[str, List[tuple]] = {}
+
     for i, ch in enumerate(chunks, start=1):
-        lines.append(
-            f"- [SOURCE {i}] {ch.get('source_folder','?')}/{ch.get('file_name','?')} (chunk {ch.get('chunk_index','?')})"
-        )
+        file_path = f"{ch.get('source_folder', '?')}/{ch.get('file_name', '?')}"
+        chunk_idx = ch.get('chunk_index', '?')
+
+        if file_path not in file_groups:
+            file_groups[file_path] = []
+        file_groups[file_path].append((i, chunk_idx))
+
+    def format_number_range(numbers: List[int]) -> str:
+        """Format a list of numbers into ranges (e.g., [1, 2, 3, 5, 7, 8] -> '1-3, 5, 7-8')."""
+        if not numbers:
+            return ""
+
+        # Sort and handle non-numeric values
+        try:
+            sorted_nums = sorted([int(n) for n in numbers])
+        except (ValueError, TypeError):
+            # If conversion fails, just join with commas
+            return ", ".join(str(n) for n in numbers)
+
+        ranges = []
+        start = sorted_nums[0]
+        end = start
+
+        for num in sorted_nums[1:]:
+            if num == end + 1:
+                end = num
+            else:
+                if start == end:
+                    ranges.append(str(start))
+                else:
+                    ranges.append(f"{start}-{end}")
+                start = num
+                end = num
+
+        # Add the last range
+        if start == end:
+            ranges.append(str(start))
+        else:
+            ranges.append(f"{start}-{end}")
+
+        return ", ".join(ranges)
+
+    lines = []
+    for file_path, source_chunks in file_groups.items():
+        source_numbers = [sc[0] for sc in source_chunks]
+        chunk_indices = [sc[1] for sc in source_chunks]
+
+        # Format source numbers
+        if len(source_numbers) == 1:
+            source_label = f"[SOURCE {source_numbers[0]}]"
+        else:
+            source_range = format_number_range(source_numbers)
+            source_label = f"[SOURCES {source_range}]"
+
+        # Format chunk indices
+        if len(chunk_indices) == 1:
+            chunk_label = f"chunk {chunk_indices[0]}"
+        else:
+            chunk_range = format_number_range(chunk_indices)
+            chunk_label = f"chunks {chunk_range}"
+
+        lines.append(f"- {source_label} {file_path} ({chunk_label})")
+
     return "\n".join(lines)
 
 
