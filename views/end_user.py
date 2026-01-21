@@ -2,6 +2,9 @@
 End-Users View for the Quality of Dutch Government application.
 Provides a chat interface for users to interact with the LLM system
 and rate their satisfaction with responses.
+
+Uses st.fragment to prevent full page reloads during chat interactions
+and LIKERT scale submissions.
 """
 
 import streamlit as st
@@ -137,8 +140,14 @@ OLLAMA_MODEL=llama3.2""",
     return False
 
 
+@st.fragment
 def render_satisfaction_prompt(message_index: int) -> None:
-    """Render the satisfaction rating prompt using a 5-point Likert scale."""
+    """
+    Render the satisfaction rating prompt using a 5-point Likert scale.
+    
+    This is a fragment to prevent full page reloads when the user interacts
+    with the LIKERT scale radio buttons or submits their rating.
+    """
     st.markdown(
         """
         <div style="
@@ -246,6 +255,10 @@ def render_satisfaction_prompt(message_index: int) -> None:
                 st.toast(f"Rating noted locally. {save_error or ''}",
                          icon="🏛️")
 
+            # Trigger a full app rerun to update the main view
+            # (hide the satisfaction prompt after submission)
+            st.rerun()
+
 
 def render_chat_messages() -> None:
     """Render the chat message history."""
@@ -257,8 +270,123 @@ def render_chat_messages() -> None:
             st.markdown(content)
 
 
+@st.fragment
+def chat_input_fragment(api_ready: bool, topics: list) -> None:
+    """
+    Fragment containing the chat input and message processing.
+    
+    This fragment handles user input and LLM response generation without
+    causing a full page reload. Only this fragment reruns when processing
+    messages.
+    
+    Args:
+        api_ready: Whether the API is configured and ready
+        topics: List of available topics for filtering
+    """
+    # Initialize processed message count if not exists
+    if 'processed_message_count' not in st.session_state:
+        st.session_state.processed_message_count = 0
+
+    st.markdown("### :material/chat: Ask a question")
+
+    with st.container():
+        st.markdown('<div class="topic-composer">', unsafe_allow_html=True)
+
+        col_topic, col_hint = st.columns([3, 2])
+        with col_topic:
+            if "selected_topic" not in st.session_state:
+                st.session_state.selected_topic = "All topics"
+
+            # Ensure selected topic is still valid
+            if st.session_state.selected_topic not in topics:
+                st.session_state.selected_topic = "All topics"
+
+            st.session_state.selected_topic = st.selectbox(
+                "Topic (limits which documents are searched)",
+                topics,
+                index=topics.index(st.session_state.selected_topic),
+                label_visibility="collapsed",
+                key="topic_selector_fragment")
+
+        with col_hint:
+            st.markdown(
+                '<div class="topic-caption">Filters the document database for retrieval.</div>',
+                unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Chat input (only enabled if API is ready)
+    if api_ready:
+        if prompt := st.chat_input(
+                "Ask about Dutch government quality and performance...",
+                key="user_chat_input"):
+            # GUARD: Check if we've already processed this message
+            current_history_len = len(st.session_state.chat_history)
+            expected_len = st.session_state.processed_message_count * 2
+
+            # Only process if history length matches what we expect
+            if current_history_len == expected_len:
+                # First check with Agent if query matches any subtopics
+                with st.spinner("Agent analyzing query..."):
+                    success, response, synthesis_data = send_message(
+                        prompt, topic=st.session_state.selected_topic)
+
+                # If query didn't match sources, show info and don't add to chat
+                if not success:
+                    st.info(response)
+                    st.session_state.awaiting_rating = False
+                    st.session_state.last_synthesis_data = None
+                else:
+                    # Query matched sources - show full chat interaction
+                    # Add user message to history
+                    st.session_state.chat_history.append({
+                        "role": "user",
+                        "content": prompt
+                    })
+
+                    # Display user message
+                    with st.chat_message("user", avatar="🧑‍💻"):
+                        st.markdown(prompt)
+
+                    # Display assistant response
+                    with st.chat_message("assistant", avatar="🏛️"):
+                        st.markdown(response)
+
+                    # Store synthesis data for satisfaction rating
+                    st.session_state.last_synthesis_data = synthesis_data
+
+                    # Add assistant message to history
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response
+                    })
+
+                    # Update processed count
+                    st.session_state.processed_message_count += 1
+
+                    # Update interaction count
+                    update_interaction_count()
+
+                    # Enable satisfaction rating
+                    st.session_state.awaiting_rating = True
+
+                    # Rerun full app to show satisfaction prompt and update chat history
+                    st.rerun()
+
+    else:
+        st.chat_input("Chat disabled - configure API key first",
+                      disabled=True,
+                      key="user_chat_input_disabled")
+
+
 def render_end_user_view() -> None:
-    """Render the complete End-User view with chat interface."""
+    """
+    Render the complete End-User view with chat interface.
+    
+    Uses st.fragment decorators to prevent full page reloads:
+    - render_satisfaction_prompt: Fragment for LIKERT scale interactions
+    - chat_input_fragment: Fragment for chat input and LLM response handling
+    """
     user = get_current_user()
 
     # Page header with logo
@@ -360,10 +488,11 @@ def render_end_user_view() -> None:
         """,
                     unsafe_allow_html=True)
 
-    # Render existing chat messages
+    # Render existing chat messages (outside fragment - static content)
     render_chat_messages()
 
-    # Show satisfaction prompt if awaiting rating (after messages are rendered)
+    # Show satisfaction prompt if awaiting rating (this is a fragment)
+    # The fragment prevents full page reload when interacting with LIKERT scale
     if st.session_state.awaiting_rating and len(
             st.session_state.chat_history) > 0:
         current_index = len(st.session_state.chat_history)
@@ -403,101 +532,12 @@ def render_end_user_view() -> None:
 
     TOPICS = load_topics()
 
-    if "selected_topic" not in st.session_state:
-        st.session_state.selected_topic = "All topics"
+    # Call the chat input fragment
+    # This fragment handles topic selection, chat input, and LLM response
+    # without causing full page reloads during message processing
+    chat_input_fragment(api_ready, TOPICS)
 
-    # Ensure selected topic is still valid (in case topics changed)
-    if st.session_state.selected_topic not in TOPICS:
-        st.session_state.selected_topic = "All topics"
-
-    st.markdown("### :material/chat: Ask a question")
-
-    with st.container():
-        st.markdown('<div class="topic-composer">', unsafe_allow_html=True)
-
-        col_topic, col_hint = st.columns([3, 2])
-        with col_topic:
-            st.session_state.selected_topic = st.selectbox(
-                "Topic (limits which documents are searched)",
-                TOPICS,
-                index=TOPICS.index(st.session_state.selected_topic),
-                label_visibility="collapsed",
-            )
-
-        with col_hint:
-            st.markdown(
-                '<div class="topic-caption">Filters the document database for retrieval.</div>',
-                unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Chat input (only enabled if API is ready)
-    if api_ready:
-        if prompt := st.chat_input(
-                "Ask about Dutch government quality and performance...",
-                key="user_chat_input"):
-            # GUARD: Check if we've already processed this message
-            # We track by comparing chat_history length with processed count
-            # Each complete interaction adds 2 messages (user + assistant)
-            current_history_len = len(st.session_state.chat_history)
-            expected_len = st.session_state.processed_message_count * 2
-
-            # Only process if history length matches what we expect
-            # (i.e., we haven't already added messages for this prompt)
-            if current_history_len == expected_len:
-                # First check with Agent if query matches any subtopics
-                with st.spinner("Agent analyzing query..."):
-                    success, response, synthesis_data = send_message(
-                        prompt, topic=st.session_state.selected_topic)
-
-                # If query didn't match sources, show info and don't add to chat
-                if not success:
-                    st.info(response)
-                    st.session_state.awaiting_rating = False
-                    st.session_state.last_synthesis_data = None
-                else:
-                    # Query matched sources - show full chat interaction
-                    # Add user message to history
-                    st.session_state.chat_history.append({
-                        "role": "user",
-                        "content": prompt
-                    })
-
-                    # Display user message
-                    with st.chat_message("user", avatar="🧑‍💻"):
-                        st.markdown(prompt)
-
-                    # Display assistant response
-                    with st.chat_message("assistant", avatar="🏛️"):
-                        st.markdown(response)
-
-                    # Store synthesis data for satisfaction rating
-                    st.session_state.last_synthesis_data = synthesis_data
-
-                    # Add assistant message to history
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": response
-                    })
-
-                    # Update processed count
-                    st.session_state.processed_message_count += 1
-
-                    # Update interaction count
-                    update_interaction_count()
-
-                    # Enable satisfaction rating (we only get here if subtopics matched)
-                    st.session_state.awaiting_rating = True
-
-                    # Force rerun so the satisfaction prompt renders
-                    st.rerun()
-
-    else:
-        st.chat_input("Chat disabled - configure API key first",
-                      disabled=True,
-                      key="user_chat_input_disabled")
-
-    # Clear chat button in sidebar
+    # Clear chat button in sidebar (outside fragment - sidebar not supported in fragments)
     with st.sidebar:
         st.markdown("---")
         if st.button(":material/delete: Clear Chat", use_container_width=True):
