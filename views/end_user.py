@@ -574,7 +574,7 @@ def render_end_user_view() -> None:
     # Clear chat button in sidebar (outside fragment - sidebar not supported in fragments)
     with st.sidebar:
         st.markdown("---")
-        
+
         # Privacy Notice Section
         with st.expander("🔒 Privacy Notice", expanded=False):
             st.markdown("""
@@ -604,7 +604,7 @@ def render_end_user_view() -> None:
             
             **Questions?** Contact the research team at Utrecht University.
             """)
-        
+
         st.markdown("---")
         if st.button(":material/delete: Clear Chat", use_container_width=True):
             st.session_state.chat_history = []
