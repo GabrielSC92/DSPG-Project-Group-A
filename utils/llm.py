@@ -800,7 +800,7 @@ def send_message(
         "topic": topic,
         "search_terms": search_terms,
         "num_chunks": len(chunks),
-        "documents_filtered": len(relevant_doc_ids)
+        "subtopics_used": len(relevant_subtopic_ids)
     }
 
     return True, response, metadata
