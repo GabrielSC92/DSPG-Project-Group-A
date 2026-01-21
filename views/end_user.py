@@ -16,12 +16,16 @@ from utils.llm import (init_gemini, send_message, clear_chat_session,
 
 # Try to import database functions
 try:
-    from utils.database import save_interaction, is_database_connected, get_available_topics
+    from utils.database import save_interaction, is_database_connected, get_available_topics, get_subtopics_by_topic_label
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
 
     def get_available_topics():
+        """Fallback if database not available."""
+        return []
+
+    def get_subtopics_by_topic_label(topic_label: str):
         """Fallback if database not available."""
         return []
 
@@ -261,13 +265,18 @@ def render_satisfaction_prompt(message_index: int) -> None:
 
 
 def render_chat_messages() -> None:
-    """Render the chat message history."""
+    """Render the chat message history with sources in collapsed expanders."""
     for i, message in enumerate(st.session_state.chat_history):
         role = message["role"]
         content = message["content"]
+        sources = message.get("sources", "")
 
         with st.chat_message(role, avatar="🧑‍💻" if role == "user" else "🏛️"):
             st.markdown(content)
+            # Show sources in collapsed expander for assistant messages
+            if role == "assistant" and sources:
+                with st.expander("📚 View Sources", expanded=False):
+                    st.markdown(sources)
 
 
 @st.fragment
@@ -292,7 +301,9 @@ def chat_input_fragment(api_ready: bool, topics: list) -> None:
     with st.container():
         st.markdown('<div class="topic-composer">', unsafe_allow_html=True)
 
-        col_topic, col_hint = st.columns([3, 2])
+        # Topic and Sub-topic selectors on same row (1:3 split)
+        col_topic, col_subtopic = st.columns([1, 3])
+
         with col_topic:
             if "selected_topic" not in st.session_state:
                 st.session_state.selected_topic = "All topics"
@@ -301,17 +312,45 @@ def chat_input_fragment(api_ready: bool, topics: list) -> None:
             if st.session_state.selected_topic not in topics:
                 st.session_state.selected_topic = "All topics"
 
-            st.session_state.selected_topic = st.selectbox(
-                "Topic (limits which documents are searched)",
-                topics,
-                index=topics.index(st.session_state.selected_topic),
-                label_visibility="collapsed",
-                key="topic_selector_fragment")
+            new_topic = st.selectbox("Topic",
+                                     topics,
+                                     index=topics.index(
+                                         st.session_state.selected_topic),
+                                     label_visibility="collapsed",
+                                     key="topic_selector_fragment")
 
-        with col_hint:
-            st.markdown(
-                '<div class="topic-caption">Filters the document database for retrieval.</div>',
-                unsafe_allow_html=True)
+            # Clear subtopic if topic changed
+            if new_topic != st.session_state.selected_topic:
+                st.session_state.selected_subtopic = "All sub-topics"
+            st.session_state.selected_topic = new_topic
+
+        with col_subtopic:
+            if "selected_subtopic" not in st.session_state:
+                st.session_state.selected_subtopic = "All sub-topics"
+
+            # Load subtopics based on selected topic
+            subtopic_options = ["All sub-topics"]
+            if st.session_state.selected_topic != "All topics" and DB_AVAILABLE:
+                db_subtopics = get_subtopics_by_topic_label(
+                    st.session_state.selected_topic)
+                if db_subtopics:
+                    subtopic_options.extend([
+                        st.get('label_en', '') for st in db_subtopics
+                        if st.get('label_en')
+                    ])
+
+            # Ensure selected subtopic is still valid
+            if st.session_state.selected_subtopic not in subtopic_options:
+                st.session_state.selected_subtopic = "All sub-topics"
+
+            st.session_state.selected_subtopic = st.selectbox(
+                "Sub-topic",
+                subtopic_options,
+                index=subtopic_options.index(
+                    st.session_state.selected_subtopic),
+                label_visibility="collapsed",
+                key="subtopic_selector_fragment",
+                disabled=(st.session_state.selected_topic == "All topics"))
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -344,21 +383,32 @@ def chat_input_fragment(api_ready: bool, topics: list) -> None:
                         "content": prompt
                     })
 
+                    # Extract sources from synthesis data
+                    sources_text = synthesis_data.get(
+                        "sources", "") if synthesis_data else ""
+
                     # Display user message
                     with st.chat_message("user", avatar="🧑‍💻"):
                         st.markdown(prompt)
 
-                    # Display assistant response
+                    # Display assistant response with sources in expander
                     with st.chat_message("assistant", avatar="🏛️"):
                         st.markdown(response)
+                        if sources_text:
+                            with st.expander("📚 View Sources", expanded=False):
+                                st.markdown(sources_text)
 
                     # Store synthesis data for satisfaction rating
                     st.session_state.last_synthesis_data = synthesis_data
 
-                    # Add assistant message to history
+                    # Add assistant message to history (with sources for re-rendering)
                     st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": response
+                        "role":
+                        "assistant",
+                        "content":
+                        response,
+                        "sources":
+                        sources_text
                     })
 
                     # Update processed count
@@ -547,5 +597,6 @@ def render_end_user_view() -> None:
             st.session_state.last_rated_index = -1
             st.session_state.processed_message_count = 0
             st.session_state.last_synthesis_data = None
+            st.session_state.selected_subtopic = "All sub-topics"
             clear_chat_session()
             st.rerun()
