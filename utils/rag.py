@@ -2,8 +2,12 @@ from typing import List, Dict, Any
 from sqlalchemy import text
 from utils.database import get_engine
 
-def retrieve_chunks(query: str, k: int = 6, source_folder: str | None = None, document_ids: List[int] | None = None) -> List[Dict[str, Any]]:
 
+def retrieve_chunks(
+        query: str,
+        k: int = 6,
+        source_folder: str | None = None,
+        document_ids: List[int] | None = None) -> List[Dict[str, Any]]:
     """
     Retrieve top-k chunks from rag_chunks using naive keyword matching (LIKE).
     Returns dicts with chunk_text + metadata.
@@ -68,7 +72,10 @@ def retrieve_chunks(query: str, k: int = 6, source_folder: str | None = None, do
     return [dict(r) for r in rows]
 
 
-def retrieve_summaries(query: str, k: int = 5, source_folder: str | None = None) -> List[Dict[str, Any]]:
+def retrieve_summaries(
+        query: str,
+        k: int = 5,
+        source_folder: str | None = None) -> List[Dict[str, Any]]:
     """
     Retrieve top-k document summaries using keyword matching.
     Useful for agent to understand which documents are relevant before retrieving chunks.
@@ -88,11 +95,12 @@ def retrieve_summaries(query: str, k: int = 5, source_folder: str | None = None)
 
     # Match tokens against both summary and document metadata
     for i, tok in enumerate(tokens[:10]):
-        conditions.append(f"(LOWER(d.summary) LIKE :t{i} OR LOWER(d.file_name) LIKE :t{i})")
+        conditions.append(
+            f"(LOWER(d.summary) LIKE :t{i} OR LOWER(d.file_name) LIKE :t{i})")
         params[f"t{i}"] = f"%{tok}%"
 
     where_clause = " OR ".join(conditions)
-    
+
     # Filter by category if specified
     topic_filter_sql = ""
     if source_folder and source_folder != "All topics":
@@ -147,7 +155,8 @@ def format_summaries(summaries: List[Dict[str, Any]]) -> str:
     blocks = []
     for i, doc in enumerate(summaries, start=1):
         src = f"{doc.get('source_folder','?')}/{doc.get('file_name','?')}"
-        blocks.append(f"[DOC {i}] {src}\n{doc.get('summary', 'No summary available')}")
+        blocks.append(
+            f"[DOC {i}] {src}\n{doc.get('summary', 'No summary available')}")
     return "\n\n".join(blocks)
 
 
@@ -156,5 +165,93 @@ def format_sources_list(chunks: List[Dict[str, Any]]) -> str:
         return ""
     lines = []
     for i, ch in enumerate(chunks, start=1):
-        lines.append(f"- [SOURCE {i}] {ch.get('source_folder','?')}/{ch.get('file_name','?')} (chunk {ch.get('chunk_index','?')})")
+        lines.append(
+            f"- [SOURCE {i}] {ch.get('source_folder','?')}/{ch.get('file_name','?')} (chunk {ch.get('chunk_index','?')})"
+        )
     return "\n".join(lines)
+
+
+def retrieve_chunks_by_subtopics(query: str,
+                                 subtopic_ids: List[int],
+                                 k: int = 12) -> List[Dict[str, Any]]:
+    """
+    Retrieve chunks filtered by subtopic IDs with optional keyword ranking.
+    This is the primary retrieval method when the Agent has selected relevant subtopics.
+    
+    Args:
+        query: Search query for optional keyword ranking
+        subtopic_ids: List of subtopic IDs to retrieve chunks from
+        k: Number of chunks to retrieve
+        
+    Returns:
+        List of chunk dicts with metadata
+    """
+    engine = get_engine()
+    if engine is None:
+        return []
+
+    if not subtopic_ids:
+        return []
+
+    params: Dict[str, Any] = {}
+
+    # Build subtopic ID filter
+    subtopic_placeholders = ','.join(
+        [f':st_id_{i}' for i in range(len(subtopic_ids))])
+    for i, st_id in enumerate(subtopic_ids):
+        params[f"st_id_{i}"] = st_id
+
+    # Optional keyword matching for ranking within subtopics
+    tokens = [t.strip().lower() for t in query.split() if len(t.strip()) >= 3]
+
+    if tokens:
+        # Build keyword conditions for ranking
+        keyword_conditions = []
+        for i, tok in enumerate(tokens[:5]):
+            keyword_conditions.append(f"LOWER(c.chunk_text) LIKE :t{i}")
+            params[f"t{i}"] = f"%{tok}%"
+
+        keyword_clause = " OR ".join(keyword_conditions)
+
+        # Retrieve chunks matching subtopics, prioritizing keyword matches
+        sql = f"""
+        SELECT
+            c.chunk_text AS chunk_text,
+            c.chunk_index AS chunk_index,
+            c.subtopic_id AS subtopic_id,
+            d.source_folder AS source_folder,
+            d.file_name AS file_name,
+            d.doc_key AS doc_key,
+            st.label_en AS subtopic_label,
+            CASE WHEN ({keyword_clause}) THEN 1 ELSE 0 END AS keyword_match
+        FROM rag_chunks c
+        JOIN rag_documents d ON d.id = c.document_id
+        LEFT JOIN subtopics st ON st.id = c.subtopic_id
+        WHERE c.subtopic_id IN ({subtopic_placeholders})
+        ORDER BY keyword_match DESC
+        LIMIT :k
+        """
+    else:
+        # No keywords - just retrieve by subtopic
+        sql = f"""
+        SELECT
+            c.chunk_text AS chunk_text,
+            c.chunk_index AS chunk_index,
+            c.subtopic_id AS subtopic_id,
+            d.source_folder AS source_folder,
+            d.file_name AS file_name,
+            d.doc_key AS doc_key,
+            st.label_en AS subtopic_label
+        FROM rag_chunks c
+        JOIN rag_documents d ON d.id = c.document_id
+        LEFT JOIN subtopics st ON st.id = c.subtopic_id
+        WHERE c.subtopic_id IN ({subtopic_placeholders})
+        LIMIT :k
+        """
+
+    params["k"] = k
+
+    with engine.connect() as conn:
+        rows = conn.execute(text(sql), params).mappings().all()
+
+    return [dict(r) for r in rows]

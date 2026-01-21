@@ -13,10 +13,14 @@ from utils.llm import (init_gemini, send_message, clear_chat_session,
 
 # Try to import database functions
 try:
-    from utils.database import save_interaction, is_database_connected
+    from utils.database import save_interaction, is_database_connected, get_available_topics
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
+    
+    def get_available_topics():
+        """Fallback if database not available."""
+        return []
 
 
 
@@ -224,11 +228,14 @@ def render_satisfaction_prompt(message_index: int) -> None:
 
                     # Call Synthesis API → Correlation → Verification → DB Store
                     # Note: Raw chat content is NOT stored, only synthesized summary
+                    # Pass the selected topic to be stored in the summary field
+                    selected_topic = st.session_state.get('selected_topic', 'All topics')
                     success, result = run_synthesis_and_store(
                         user_prompt=user_prompt,
                         llm_response=llm_response,
                         satisfaction=float(satisfaction),
-                        user_id=user_id)
+                        user_id=user_id,
+                        topic=selected_topic)
                     saved_to_db = success
                     if not success:
                         save_error = result
@@ -368,20 +375,43 @@ def render_end_user_view() -> None:
         if current_index > st.session_state.last_rated_index:
             render_satisfaction_prompt(current_index)
 
-    #topics for filter
-    TOPICS = [
-        "All topics",
-        "Defence",
-        "Finance",
-        "Education",
-        "Health",
-        "Justice",
-        "Foreign",
-        "Domestic",
-        "Audit Office",
-    ]
+    # Load topics dynamically from database
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def load_topics():
+        """Load available topics from database."""
+        topics_list = ["All topics"]  # Always include "All topics" option
+        
+        if DB_AVAILABLE:
+            db_topics = get_available_topics()
+            if db_topics:
+                # Add English labels from database
+                for topic in db_topics:
+                    label = topic.get('label_en', topic.get('source_folder', '').title())
+                    if label and label not in topics_list:
+                        topics_list.append(label)
+        
+        # Fallback: if no topics in DB, use defaults
+        if len(topics_list) == 1:
+            topics_list.extend([
+                "Defence",
+                "Finance", 
+                "Education",
+                "Health",
+                "Justice",
+                "Foreign Affairs",
+                "Domestic Affairs",
+                "Audit Office",
+            ])
+        
+        return topics_list
+    
+    TOPICS = load_topics()
 
     if "selected_topic" not in st.session_state:
+        st.session_state.selected_topic = "All topics"
+    
+    # Ensure selected topic is still valid (in case topics changed)
+    if st.session_state.selected_topic not in TOPICS:
         st.session_state.selected_topic = "All topics"
 
     # Styling for the selectbox near the chat

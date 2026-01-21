@@ -139,6 +139,7 @@ if SQLALCHEMY_AVAILABLE:
     class RagChunk(Base):
         """
         Stores chunked text for RAG retrieval. One document has many chunks.
+        Each chunk is linked to a sub-topic for efficient filtering.
         """
         __tablename__ = "rag_chunks"
 
@@ -147,6 +148,10 @@ if SQLALCHEMY_AVAILABLE:
         document_id = Column(Integer,
                              ForeignKey("rag_documents.id"),
                              nullable=False)
+        
+        # Link to sub-topic for efficient filtering (nullable for backward compatibility)
+        subtopic_id = Column(Integer, ForeignKey("subtopics.id"), nullable=True)
+        
         chunk_index = Column(Integer, nullable=False)
 
         page_start = Column(Integer, nullable=True)
@@ -154,6 +159,56 @@ if SQLALCHEMY_AVAILABLE:
 
         chunk_text = Column(Text, nullable=False)
 
+        created_at = Column(DateTime(timezone=True),
+                            server_default=func.now(),
+                            nullable=False)
+
+    class Topic(Base):
+        """
+        Stores available topics generated from ingested documents.
+        Topics are derived from source folders and translated to English labels.
+        """
+        __tablename__ = "topics"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        
+        # Original source folder name (e.g., "defensie")
+        source_folder = Column(String(80), unique=True, nullable=False)
+        
+        # English label for the topic (e.g., "Defence")
+        label_en = Column(String(100), nullable=False)
+        
+        # Number of documents associated with this topic
+        document_count = Column(Integer, default=0, nullable=False)
+        
+        created_at = Column(DateTime(timezone=True),
+                            server_default=func.now(),
+                            nullable=False)
+        updated_at = Column(DateTime(timezone=True),
+                            server_default=func.now(),
+                            onupdate=func.now(),
+                            nullable=False)
+
+    class SubTopic(Base):
+        """
+        Stores sub-topics within a topic. Each chunk is linked to a sub-topic.
+        Sub-topics are generated from chunk content during ingestion.
+        
+        Example: Topic "Defence" -> SubTopics: "Submarine Procurement", "Military Budget", etc.
+        """
+        __tablename__ = "subtopics"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        
+        # Foreign key to parent topic
+        topic_id = Column(Integer, ForeignKey("topics.id"), nullable=False)
+        
+        # English label for the sub-topic (e.g., "Submarine Procurement")
+        label_en = Column(String(150), nullable=False)
+        
+        # Number of chunks associated with this sub-topic
+        chunk_count = Column(Integer, default=0, nullable=False)
+        
         created_at = Column(DateTime(timezone=True),
                             server_default=func.now(),
                             nullable=False)
@@ -608,3 +663,380 @@ def get_interaction_stats() -> Dict[str, Any]:
         return {}
     finally:
         session.close()
+
+
+# ============== TOPIC TABLE OPERATIONS ==============
+
+
+def get_available_topics() -> List[Dict[str, Any]]:
+    """
+    Get all available topics from the database.
+    
+    Returns:
+        List of topic dicts with 'source_folder', 'label_en', and 'document_count'
+    """
+    session = get_session()
+    if session is None:
+        return []
+
+    try:
+        topics = session.query(Topic).order_by(Topic.label_en).all()
+        return [
+            {
+                'id': t.id,
+                'source_folder': t.source_folder,
+                'label_en': t.label_en,
+                'document_count': t.document_count
+            }
+            for t in topics
+        ]
+    except Exception as e:
+        print(f"DATABASE: Error getting topics: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def upsert_topic(source_folder: str, label_en: str, document_count: int = 0) -> Tuple[bool, str]:
+    """
+    Create or update a topic in the database.
+    
+    Args:
+        source_folder: Original folder name (e.g., "defensie")
+        label_en: English label (e.g., "Defence")
+        document_count: Number of documents for this topic
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    session = get_session()
+    if session is None:
+        return False, "Database not connected"
+
+    try:
+        topic = session.query(Topic).filter(
+            Topic.source_folder == source_folder.lower()
+        ).one_or_none()
+        
+        if topic is None:
+            topic = Topic(
+                source_folder=source_folder.lower(),
+                label_en=label_en,
+                document_count=document_count
+            )
+            session.add(topic)
+        else:
+            topic.label_en = label_en
+            topic.document_count = document_count
+        
+        session.commit()
+        return True, f"Topic '{label_en}' saved"
+    except Exception as e:
+        session.rollback()
+        return False, f"Failed to save topic: {e}"
+    finally:
+        session.close()
+
+
+def update_topic_counts() -> Tuple[bool, str]:
+    """
+    Update document counts for all topics based on rag_documents table.
+    
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    session = get_session()
+    if session is None:
+        return False, "Database not connected"
+
+    try:
+        # Get counts per source_folder from rag_documents
+        from sqlalchemy import func
+        counts = session.query(
+            RagDocument.source_folder,
+            func.count(RagDocument.id).label('count')
+        ).group_by(RagDocument.source_folder).all()
+        
+        for source_folder, count in counts:
+            topic = session.query(Topic).filter(
+                Topic.source_folder == source_folder.lower()
+            ).one_or_none()
+            
+            if topic:
+                topic.document_count = count
+        
+        session.commit()
+        return True, f"Updated counts for {len(counts)} topics"
+    except Exception as e:
+        session.rollback()
+        return False, f"Failed to update topic counts: {e}"
+    finally:
+        session.close()
+
+
+def get_topic_label_by_folder(source_folder: str) -> Optional[str]:
+    """
+    Get the English label for a topic by its source folder name.
+    
+    Args:
+        source_folder: Original folder name (e.g., "defensie")
+        
+    Returns:
+        English label or None if not found
+    """
+    session = get_session()
+    if session is None:
+        return None
+
+    try:
+        topic = session.query(Topic).filter(
+            Topic.source_folder == source_folder.lower()
+        ).one_or_none()
+        
+        return topic.label_en if topic else None
+    except Exception as e:
+        print(f"DATABASE: Error getting topic label: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def get_topic_id_by_folder(source_folder: str) -> Optional[int]:
+    """
+    Get the topic ID by its source folder name.
+    
+    Args:
+        source_folder: Original folder name (e.g., "defensie")
+        
+    Returns:
+        Topic ID or None if not found
+    """
+    session = get_session()
+    if session is None:
+        return None
+
+    try:
+        topic = session.query(Topic).filter(
+            Topic.source_folder == source_folder.lower()
+        ).one_or_none()
+        
+        return topic.id if topic else None
+    except Exception as e:
+        print(f"DATABASE: Error getting topic ID: {e}")
+        return None
+    finally:
+        session.close()
+
+
+# ============== SUBTOPIC TABLE OPERATIONS ==============
+
+
+def get_or_create_subtopic(session, topic_id: int, label_en: str) -> int:
+    """
+    Get existing subtopic or create a new one.
+    
+    Args:
+        session: Database session (must be passed for transaction consistency)
+        topic_id: Parent topic ID
+        label_en: English label for the sub-topic
+        
+    Returns:
+        SubTopic ID
+    """
+    # Normalize the label
+    label_normalized = label_en.strip().title()[:150]
+    
+    subtopic = session.query(SubTopic).filter(
+        SubTopic.topic_id == topic_id,
+        SubTopic.label_en == label_normalized
+    ).one_or_none()
+    
+    if subtopic is None:
+        subtopic = SubTopic(
+            topic_id=topic_id,
+            label_en=label_normalized,
+            chunk_count=0
+        )
+        session.add(subtopic)
+        session.flush()  # Get the ID
+    
+    return subtopic.id
+
+
+def get_subtopics_by_topic(topic_id: int) -> List[Dict[str, Any]]:
+    """
+    Get all sub-topics for a given topic.
+    
+    Args:
+        topic_id: Parent topic ID
+        
+    Returns:
+        List of subtopic dicts
+    """
+    session = get_session()
+    if session is None:
+        return []
+
+    try:
+        subtopics = session.query(SubTopic).filter(
+            SubTopic.topic_id == topic_id
+        ).order_by(SubTopic.label_en).all()
+        
+        return [
+            {
+                'id': st.id,
+                'topic_id': st.topic_id,
+                'label_en': st.label_en,
+                'chunk_count': st.chunk_count
+            }
+            for st in subtopics
+        ]
+    except Exception as e:
+        print(f"DATABASE: Error getting subtopics: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def get_subtopics_by_topic_label(topic_label: str) -> List[Dict[str, Any]]:
+    """
+    Get all sub-topics for a given topic label (English).
+    
+    Args:
+        topic_label: English topic label (e.g., "Defence")
+        
+    Returns:
+        List of subtopic dicts with label and chunk count
+    """
+    session = get_session()
+    if session is None:
+        return []
+
+    try:
+        # Find topic by label
+        topic = session.query(Topic).filter(
+            Topic.label_en == topic_label
+        ).one_or_none()
+        
+        if not topic:
+            return []
+        
+        subtopics = session.query(SubTopic).filter(
+            SubTopic.topic_id == topic.id
+        ).order_by(SubTopic.chunk_count.desc()).all()
+        
+        return [
+            {
+                'id': st.id,
+                'label_en': st.label_en,
+                'chunk_count': st.chunk_count
+            }
+            for st in subtopics
+        ]
+    except Exception as e:
+        print(f"DATABASE: Error getting subtopics by label: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def get_all_subtopics_with_topics() -> List[Dict[str, Any]]:
+    """
+    Get all sub-topics with their parent topic information.
+    Used by the Agent for efficient filtering.
+    
+    Returns:
+        List of dicts with topic and subtopic info
+    """
+    session = get_session()
+    if session is None:
+        return []
+
+    try:
+        results = session.query(
+            SubTopic.id,
+            SubTopic.label_en.label('subtopic'),
+            SubTopic.chunk_count,
+            Topic.label_en.label('topic'),
+            Topic.source_folder
+        ).join(Topic, SubTopic.topic_id == Topic.id).order_by(
+            Topic.label_en, SubTopic.label_en
+        ).all()
+        
+        return [
+            {
+                'subtopic_id': r.id,
+                'subtopic': r.subtopic,
+                'chunk_count': r.chunk_count,
+                'topic': r.topic,
+                'source_folder': r.source_folder
+            }
+            for r in results
+        ]
+    except Exception as e:
+        print(f"DATABASE: Error getting all subtopics: {e}")
+        return []
+    finally:
+        session.close()
+
+
+def update_subtopic_counts() -> Tuple[bool, str]:
+    """
+    Update chunk counts for all subtopics based on rag_chunks table.
+    
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    session = get_session()
+    if session is None:
+        return False, "Database not connected"
+
+    try:
+        from sqlalchemy import func
+        
+        # Get counts per subtopic from rag_chunks
+        counts = session.query(
+            RagChunk.subtopic_id,
+            func.count(RagChunk.id).label('count')
+        ).filter(
+            RagChunk.subtopic_id.isnot(None)
+        ).group_by(RagChunk.subtopic_id).all()
+        
+        for subtopic_id, count in counts:
+            subtopic = session.query(SubTopic).filter(
+                SubTopic.id == subtopic_id
+            ).one_or_none()
+            
+            if subtopic:
+                subtopic.chunk_count = count
+        
+        session.commit()
+        return True, f"Updated counts for {len(counts)} subtopics"
+    except Exception as e:
+        session.rollback()
+        return False, f"Failed to update subtopic counts: {e}"
+    finally:
+        session.close()
+
+
+def update_chunk_subtopic(session, chunk_id: int, subtopic_id: int) -> bool:
+    """
+    Update the subtopic_id for a chunk.
+    
+    Args:
+        session: Database session
+        chunk_id: Chunk ID
+        subtopic_id: SubTopic ID
+        
+    Returns:
+        True if successful
+    """
+    try:
+        chunk = session.query(RagChunk).filter(RagChunk.id == chunk_id).one_or_none()
+        if chunk:
+            chunk.subtopic_id = subtopic_id
+            return True
+        return False
+    except Exception as e:
+        print(f"DATABASE: Error updating chunk subtopic: {e}")
+        return False
