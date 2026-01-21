@@ -842,25 +842,30 @@ def synthesize_and_store(
         llm_response: The LLM's response
         satisfaction: User satisfaction score (1-5)
         user_id: The user's ID
-        topic: Optional topic selected by the user (will be prepended to summary)
+        topic: Optional topic label selected by the user (e.g., "Defence")
         matched_subtopics: List of subtopic labels that matched the query
     """
     try:
-        from utils.database import save_interaction, is_database_connected
+        from utils.database import save_interaction, is_database_connected, get_topic_id_by_label
 
         if not is_database_connected():
             return False, "Database not connected"
 
-        # Create summary from matched subtopics (preferred) or fallback to local summary
+        # Look up topic_id from topic label
+        topic_id = None
+        if topic and topic != "All topics":
+            topic_id = get_topic_id_by_label(topic)
+
+        # Create summary from matched subtopics (preferred) or fallback
         if matched_subtopics:
             # Use matched subtopic labels as summary (limit to first 3)
             subtopics_str = ", ".join(matched_subtopics[:3])
             if len(matched_subtopics) > 3:
                 subtopics_str += f" (+{len(matched_subtopics) - 3} more)"
-            summary = f"[Topic: {topic}] {subtopics_str}" if topic and topic != "All topics" else subtopics_str
+            summary = subtopics_str
         else:
             # Fallback: query didn't match any subtopics
-            summary = f"[Topic: {topic}] No specific subtopic matched" if topic and topic != "All topics" else "General query (no subtopic matched)"
+            summary = "General query"
 
         correlation = _compute_correlation(user_prompt, llm_response)
         flag = 'V' if correlation >= 0.3 else 'U'
@@ -868,6 +873,7 @@ def synthesize_and_store(
         return save_interaction(user_id=user_id,
                                 satisfaction_raw=satisfaction,
                                 summary=summary,
+                                topic_id=topic_id,
                                 correlation_index=correlation,
                                 verification_flag=flag)
 

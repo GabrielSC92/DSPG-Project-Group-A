@@ -37,6 +37,26 @@ st.info(
     icon=":material/lock:")
 
 
+def calculate_user_normalized_satisfaction(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculate user-normalized satisfaction scores per Topic.
+    
+    Each user gets one "vote" per topic = their average satisfaction on that topic.
+    This prevents a single user from skewing metrics by spamming queries.
+    """
+    if df is None or len(df) == 0 or "Topic" not in df.columns:
+        return df
+
+    # Calculate mean satisfaction per (User ID, Topic)
+    df['User-Norm. Score'] = df.groupby(
+        ['User ID', 'Topic'])['Satisfaction (Raw)'].transform('mean').round(2)
+    df['User Topic Queries'] = df.groupby(
+        ['User ID',
+         'Topic'])['Satisfaction (Raw)'].transform('count').astype(int)
+
+    return df
+
+
 def load_from_database() -> pd.DataFrame:
     """Load data from the database."""
     if not DB_AVAILABLE or not is_database_connected():
@@ -46,7 +66,6 @@ def load_from_database() -> pd.DataFrame:
     if not interactions:
         return None
 
-    # Convert to DataFrame
     df = pd.DataFrame(interactions)
 
     # Rename columns to match display format
@@ -55,73 +74,121 @@ def load_from_database() -> pd.DataFrame:
             'interaction_id': 'ID',
             'user_id': 'User ID',
             'interaction_date': 'Date',
-            'summary': 'Topic Summary',
+            'topic': 'Topic',  # Now comes from topics table join
+            'summary': 'Subtopic',
             'satisfaction_raw': 'Satisfaction (Raw)',
-            'satisfaction_normalized': 'Satisfaction (Normalized)',
             'correlation_index': 'Response Quality Score',
             'verification_flag': 'Verified'
         })
 
     # Convert verification flag to boolean
     df['Verified'] = df['Verified'].apply(lambda x: x == 'V' if x else False)
-
-    # Convert date column
     df['Date'] = pd.to_datetime(df['Date'])
-
-    # Add Source column (placeholder - would come from RAG system)
     df['Source'] = 'User Interaction'
 
+    df = calculate_user_normalized_satisfaction(df)
     return df
 
 
-def generate_demo_data(n_rows: int = 100) -> pd.DataFrame:
-    """Generate demo data matching the DB Quant schema (fallback)."""
+def generate_demo_data(n_rows: int = 150) -> pd.DataFrame:
+    """Generate demo data with separate Topic and Subtopic columns."""
 
-    topics = [
-        "Financial Management", "Policy Effectiveness",
-        "Administrative Efficiency", "Service Delivery",
-        "Transparency & Accountability", "Human Resources",
-        "Digital Transformation", "Citizen Engagement",
-        "Regulatory Compliance", "Strategic Planning"
-    ]
-
-    # Generate dates over the past year
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
-
-    data = {
-        "ID": [f"QRY_{str(i).zfill(5)}" for i in range(1, n_rows + 1)],
-        "User ID":
-        [f"USR_{str(random.randint(1, 50)).zfill(3)}" for _ in range(n_rows)],
-        "Date": [
-            start_date + timedelta(days=random.randint(0, 365))
-            for _ in range(n_rows)
+    # Topics with their subtopics
+    topics = {
+        "Defence": [
+            "Border Control", "Submarine Procurement", "Military Budget",
+            "Cybersecurity", "Personnel"
         ],
-        "Topic Summary": [random.choice(topics) for _ in range(n_rows)],
-        "Satisfaction (Raw)": [random.randint(1, 5) for _ in range(n_rows)],
-        "Satisfaction (Normalized)":
-        [round(random.uniform(0, 1), 3) for _ in range(n_rows)],
-        "Response Quality Score":
-        [round(random.uniform(0.5, 1.0), 3) for _ in range(n_rows)],
-        "Verified": [random.choice([True, False]) for _ in range(n_rows)],
-        "Source": [
-            random.choice(["Court of Audit", "Auditdienst Rijk", "IOB"])
-            for _ in range(n_rows)
+        "Finance": [
+            "Budget Oversight", "Expenditure Audits", "Cost Reduction",
+            "Financial Reporting"
+        ],
+        "Healthcare": [
+            "Hospital Efficiency", "Medication Costs", "Wait Times",
+            "Emergency Response"
+        ],
+        "Education": [
+            "School Performance", "Teacher Training", "Digital Learning",
+            "Student Outcomes"
+        ],
+        "Infrastructure": [
+            "Road Maintenance", "Public Transport", "Bridge Safety",
+            "Urban Planning"
+        ],
+        "Environment": [
+            "Climate Policy", "Waste Management", "Air Quality",
+            "Renewable Energy"
         ]
     }
 
-    df = pd.DataFrame(data)
+    topic_list = list(topics.keys())
+    n_users = max(12, n_rows // 10)
+    users = [f"USR_{str(i).zfill(3)}" for i in range(1, n_users + 1)]
+
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)
+
+    # Track user-topic history for realistic repeat queries
+    user_topic_history = {}
+
+    rows = []
+    for i in range(n_rows):
+        # 30% chance of repeat query on same topic
+        if i > 0 and random.random() < 0.3 and user_topic_history:
+            user_id, topic = random.choice(list(user_topic_history.keys()))
+            base_score = sum(user_topic_history[(user_id, topic)]) / len(
+                user_topic_history[(user_id, topic)])
+            satisfaction = max(
+                1, min(5,
+                       int(round(base_score)) + random.randint(-1, 1)))
+        else:
+            user_id = random.choice(users)
+            topic = random.choice(topic_list)
+            satisfaction = random.randint(1, 5)
+
+        subtopic = random.choice(topics[topic])
+
+        # Track history
+        key = (user_id, topic)
+        if key not in user_topic_history:
+            user_topic_history[key] = []
+        user_topic_history[key].append(satisfaction)
+
+        rows.append({
+            "ID":
+            f"QRY_{str(i+1).zfill(5)}",
+            "User ID":
+            user_id,
+            "Date":
+            start_date + timedelta(days=random.randint(0, 365)),
+            "Topic":
+            topic,
+            "Subtopic":
+            subtopic,
+            "Satisfaction (Raw)":
+            satisfaction,
+            "Response Quality Score":
+            round(random.uniform(0.5, 1.0), 3),
+            "Verified":
+            random.choice([True, False]),
+            "Source":
+            random.choice(["Court of Audit", "Auditdienst Rijk", "IOB"])
+        })
+
+    df = pd.DataFrame(rows)
     df["Date"] = pd.to_datetime(df["Date"])
-    return df.sort_values("Date", ascending=False).reset_index(drop=True)
+    df = df.sort_values("Date", ascending=False).reset_index(drop=True)
+    df = calculate_user_normalized_satisfaction(df)
+    return df
 
 
-@st.cache_data(ttl=60)  # Cache for 60 seconds
+@st.cache_data(ttl=60)
 def get_data():
-    """Load data from database or generate demo data as fallback."""
+    """Load data from database or generate demo data."""
     db_data = load_from_database()
     if db_data is not None and len(db_data) > 0:
-        return db_data, True  # Return data and flag indicating DB source
-    return generate_demo_data(150), False  # Fallback to demo data
+        return db_data, True
+    return generate_demo_data(150), False
 
 
 # Load data
@@ -136,36 +203,31 @@ else:
         ":material/bar_chart: Showing demo data (database empty or not connected)",
         icon=":material/warning:")
 
-# --- FILTERS SECTION ---
+# --- FILTERS ---
 st.markdown("### :material/filter_list: Filters")
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    # Date range filter
     date_range = st.date_input("Date Range",
                                value=(df["Date"].min().date(),
                                       df["Date"].max().date()),
                                key="date_filter")
 
 with col2:
-    # Topic filter
-    topics = ["All"] + sorted(df["Topic Summary"].unique().tolist())
-    selected_topic = st.selectbox("Topic", topics, key="topic_filter")
+    topic_options = ["All"] + sorted(df["Topic"].unique().tolist())
+    selected_topic = st.selectbox("Topic", topic_options, key="topic_filter")
 
 with col3:
-    # User ID filter
     users = ["All"] + sorted(df["User ID"].unique().tolist())
     selected_user = st.selectbox("User ID", users, key="user_filter")
 
 with col4:
-    # Verification status filter
     verification_options = ["All", "Verified Only", "Unverified Only"]
-    selected_verification = st.selectbox("Verification Status",
+    selected_verification = st.selectbox("Status",
                                          verification_options,
                                          key="verification_filter")
 
-# Search box
 search_term = st.text_input(":material/search: Search",
                             placeholder="Search across all columns...",
                             key="search_box")
@@ -173,101 +235,117 @@ search_term = st.text_input(":material/search: Search",
 # Apply filters
 filtered_df = df.copy()
 
-# Date filter
 if len(date_range) == 2:
     start_date, end_date = date_range
     filtered_df = filtered_df[(filtered_df["Date"].dt.date >= start_date)
                               & (filtered_df["Date"].dt.date <= end_date)]
 
-# Topic filter
 if selected_topic != "All":
-    filtered_df = filtered_df[filtered_df["Topic Summary"] == selected_topic]
+    filtered_df = filtered_df[filtered_df["Topic"] == selected_topic]
 
-# User filter
 if selected_user != "All":
     filtered_df = filtered_df[filtered_df["User ID"] == selected_user]
 
-# Verification filter
 if selected_verification == "Verified Only":
     filtered_df = filtered_df[filtered_df["Verified"] == True]
 elif selected_verification == "Unverified Only":
     filtered_df = filtered_df[filtered_df["Verified"] == False]
 
-# Search filter
 if search_term:
-    search_term_lower = search_term.lower()
     mask = filtered_df.astype(str).apply(lambda x: x.str.lower().str.contains(
-        search_term_lower, na=False)).any(axis=1)
+        search_term.lower(), na=False)).any(axis=1)
     filtered_df = filtered_df[mask]
 
 st.markdown("---")
 
 # --- METRICS EXPLANATION ---
-with st.expander(":material/info: Understanding the Response Quality Score (RQS)", expanded=False):
+with st.expander(":material/info: Understanding the Metrics", expanded=False):
     st.markdown("""
-    The **Response Quality Score** measures how well the system answered a user's question. 
-    It is calculated based on several factors:
+    ### User-Normalized Satisfaction
+    Prevents users from skewing metrics by submitting many queries on the same topic.
     
-    | Factor | Weight | Description |
-    |--------|--------|-------------|
-    | **Source Citations** | up to 0.30 | +0.05 for each source cited in the response |
-    | **Response Length** | up to 0.25 | +0.15 if >500 chars, +0.10 more if >1000 chars |
-    | **Lexical Overlap** | up to 0.30 | +0.03 per word shared between query and response |
-    | **No Info Penalty** | -0.20 | Deducted if system couldn't find relevant info |
+    **How it works:** Each user gets **one vote per topic** = their average satisfaction for that topic.
     
-    **Score interpretation:**
-    - **≥0.30**: Verified response (✅) — Good source coverage and relevance
-    - **<0.30**: Unverified response (❌) — May lack sources or relevance
+    **Example:**
+    - User A queries "Defence" 5 times with scores: 5, 5, 5, 4, 5 → User A's vote = 4.8
+    - User B queries "Defence" 1 time with score: 2 → User B's vote = 2.0
+    - **Raw average**: (5+5+5+4+5+2) / 6 = 4.33 — User A dominates
+    - **Normalized average**: (4.8 + 2.0) / 2 = **3.4** — each user counts equally
     
-    *Note: This is a heuristic quality measure, not a statistical correlation.*
+    ---
+    
+    ### Response Quality Score (RQS)
+    Measures how well the system answered a user's question based on source citations, 
+    response length, and relevance. Score ≥0.30 = Verified (✅).
     """)
 
 # --- METRICS ROW ---
-# Calculate metrics
 avg_satisfaction = filtered_df["Satisfaction (Raw)"].mean() if len(
     filtered_df) > 0 else 0
-avg_quality_score = filtered_df["Response Quality Score"].mean() if len(
+avg_quality = filtered_df["Response Quality Score"].mean() if len(
     filtered_df) > 0 else 0
 verified_pct = (filtered_df["Verified"].sum() / len(filtered_df) *
                 100) if len(filtered_df) > 0 else 0
 unique_users = filtered_df["User ID"].nunique()
 
-# Define metrics for the row
+# Calculate normalized average (one vote per user-topic pair)
+if len(filtered_df) > 0 and "User-Norm. Score" in filtered_df.columns:
+    user_topic_votes = filtered_df.groupby(['User ID', 'Topic'
+                                            ])['User-Norm. Score'].first()
+    avg_normalized = user_topic_votes.mean() if len(
+        user_topic_votes) > 0 else 0
+    n_votes = len(user_topic_votes)
+else:
+    avg_normalized = avg_satisfaction
+    n_votes = 0
+
 metrics = [
     {
         "label": "Total Records",
         "value": str(len(filtered_df)),
         "icon": "",
         "color": "#3b82f6",
-        "help_text": "Total number of records matching the current filters"
+        "help_text": "Total records matching filters"
     },
     {
-        "label": "Avg. Satisfaction",
+        "label": "Avg. Satisfaction (Raw)",
         "value": f"{avg_satisfaction:.1f}/5",
         "icon": "",
         "color": "#f59e0b",
-        "help_text": "Average satisfaction score across filtered records"
+        "help_text": "Simple average (can be skewed by repeat queries)"
+    },
+    {
+        "label":
+        "Avg. Satisfaction (Norm.)",
+        "value":
+        f"{avg_normalized:.2f}/5",
+        "icon":
+        "",
+        "color":
+        "#10b981",
+        "help_text":
+        f"User-normalized: each user gets one vote per topic ({n_votes} votes)"
     },
     {
         "label": "Avg. Quality Score",
-        "value": f"{avg_quality_score:.3f}",
+        "value": f"{avg_quality:.3f}",
         "icon": "",
         "color": "#8b5cf6",
-        "help_text": "Average Response Quality Score (RQS) — measures source citations, response length, and relevance"
+        "help_text": "Average Response Quality Score"
     },
     {
         "label": "Verified %",
         "value": f"{verified_pct:.1f}%",
         "icon": "",
-        "color": "#10b981",
-        "help_text": "Percentage of verified records in current selection"
+        "color": "#ec4899",
+        "help_text": "Percentage of verified records"
     },
     {
         "label": "Unique Users",
         "value": str(unique_users),
         "icon": "",
         "color": "#6366f1",
-        "help_text": "Number of unique users in filtered data"
+        "help_text": "Number of unique users"
     },
 ]
 
@@ -278,12 +356,10 @@ st.markdown("---")
 # --- DATA TABLE ---
 st.markdown("### :material/list: Records")
 
-# Format the dataframe for display
 display_df = filtered_df.copy()
 display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
 display_df["Verified"] = display_df["Verified"].map({True: "✅", False: "❌"})
 
-# Column configuration for better display
 column_config = {
     "ID":
     st.column_config.TextColumn("ID", width="small"),
@@ -291,34 +367,44 @@ column_config = {
     st.column_config.TextColumn("User ID", width="small"),
     "Date":
     st.column_config.TextColumn("Date", width="small"),
-    "Topic Summary":
-    st.column_config.TextColumn("Topic", width="medium"),
+    "Topic":
+    st.column_config.TextColumn("Topic", width="small"),
+    "Subtopic":
+    st.column_config.TextColumn("Subtopic", width="medium"),
     "Satisfaction (Raw)":
-    st.column_config.ProgressColumn("Satisfaction",
+    st.column_config.ProgressColumn("Raw Score",
                                     min_value=1,
                                     max_value=5,
                                     format="%d/5"),
-    "Satisfaction (Normalized)":
-    st.column_config.NumberColumn("Norm. Score", format="%.3f"),
+    "User-Norm. Score":
+    st.column_config.ProgressColumn("Norm. Score",
+                                    min_value=1,
+                                    max_value=5,
+                                    format="%.1f/5",
+                                    help="User's average for this topic"),
+    "User Topic Queries":
+    st.column_config.NumberColumn("# Queries",
+                                  format="%d",
+                                  help="User's query count for this topic"),
     "Response Quality Score":
-    st.column_config.ProgressColumn("Quality (RQS)",
+    st.column_config.ProgressColumn("Quality",
                                     min_value=0,
                                     max_value=1,
                                     format="%.2f"),
     "Verified":
     st.column_config.TextColumn("Status", width="small"),
     "Source":
-    st.column_config.TextColumn("Source", width="small")
+    st.column_config.TextColumn("Source", width="small"),
+    "topic_id":
+    None  # Hide the raw ID column
 }
 
-# Display the data table
 st.dataframe(display_df,
              column_config=column_config,
              use_container_width=True,
              hide_index=True,
              height=500)
 
-# Quick stats
 st.markdown("---")
 st.caption(
     f"Showing {len(filtered_df)} of {len(df)} total records • Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"

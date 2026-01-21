@@ -101,13 +101,14 @@ if SQLALCHEMY_AVAILABLE:
         user_id = Column(String(10),
                          ForeignKey('auth.user_id'),
                          nullable=False)
+        topic_id = Column(Integer,
+                          ForeignKey('topics.id'),
+                          nullable=True)  # Links to topics table for normalization
         correlation_index = Column(Numeric(5, 3))  # Can be NULL, set by RAG
         verification_flag = Column(
             String(1), nullable=False,
             default='U')  # 'V' for verified, 'U' for unverified
         satisfaction_raw = Column(Numeric(3, 1), nullable=False)
-        satisfaction_normalized = Column(Numeric(
-            3, 1))  # Can be NULL until normalized
         interaction_date = Column(Date, nullable=False)
         summary = Column(Text)  # Can be NULL if no summary
 
@@ -513,9 +514,9 @@ def save_interaction(
         user_id: str,
         satisfaction_raw: float,
         summary: str,
+        topic_id: Optional[int] = None,
         correlation_index: Optional[float] = None,
-        verification_flag: str = 'U',
-        satisfaction_normalized: Optional[float] = None) -> Tuple[bool, str]:
+        verification_flag: str = 'U') -> Tuple[bool, str]:
     """
     Save a new interaction to the Quant table.
     
@@ -523,9 +524,9 @@ def save_interaction(
         user_id: The user's ID
         satisfaction_raw: Raw satisfaction score (1-5 Likert scale)
         summary: Topic summary from the interaction
+        topic_id: ID of the topic (from topics table) for normalization
         correlation_index: Similarity/correlation score (optional, set by RAG)
         verification_flag: 'V' for verified, 'U' for unverified
-        satisfaction_normalized: Normalized satisfaction score (optional)
         
     Returns:
         Tuple of (success: bool, interaction_id or error message)
@@ -540,10 +541,10 @@ def save_interaction(
         new_interaction = QuantInteraction(
             interaction_id=interaction_id,
             user_id=user_id,
+            topic_id=topic_id,
             correlation_index=correlation_index,
             verification_flag=verification_flag[0].upper(),
             satisfaction_raw=satisfaction_raw,
-            satisfaction_normalized=satisfaction_normalized,
             interaction_date=date.today(),
             summary=summary[:5000] if summary else None  # Limit summary length
         )
@@ -567,6 +568,7 @@ def get_all_interactions(user_id: Optional[str] = None,
                          limit: int = 1000) -> List[Dict[str, Any]]:
     """
     Get interactions from the Quant table with optional filters.
+    Joins with topics table to get topic labels.
     
     Args:
         user_id: Filter by user ID (optional)
@@ -575,14 +577,18 @@ def get_all_interactions(user_id: Optional[str] = None,
         limit: Maximum number of records to return
         
     Returns:
-        List of interaction dicts
+        List of interaction dicts with topic info
     """
     session = get_session()
     if session is None:
         return []
 
     try:
-        query = session.query(QuantInteraction)
+        # Join with topics table to get topic label
+        query = session.query(
+            QuantInteraction,
+            Topic.label_en.label('topic_label')
+        ).outerjoin(Topic, QuantInteraction.topic_id == Topic.id)
 
         if user_id:
             query = query.filter(QuantInteraction.user_id == user_id)
@@ -596,27 +602,17 @@ def get_all_interactions(user_id: Optional[str] = None,
             QuantInteraction.interaction_date.desc()).limit(limit)
 
         results = []
-        for interaction in query.all():
+        for interaction, topic_label in query.all():
             results.append({
-                'interaction_id':
-                interaction.interaction_id,
-                'user_id':
-                interaction.user_id,
-                'correlation_index':
-                float(interaction.correlation_index)
-                if interaction.correlation_index else None,
-                'verification_flag':
-                interaction.verification_flag,
-                'satisfaction_raw':
-                float(interaction.satisfaction_raw)
-                if interaction.satisfaction_raw else None,
-                'satisfaction_normalized':
-                float(interaction.satisfaction_normalized)
-                if interaction.satisfaction_normalized else None,
-                'interaction_date':
-                interaction.interaction_date,
-                'summary':
-                interaction.summary
+                'interaction_id': interaction.interaction_id,
+                'user_id': interaction.user_id,
+                'topic_id': interaction.topic_id,
+                'topic': topic_label or 'General',  # Fallback if no topic set
+                'correlation_index': float(interaction.correlation_index) if interaction.correlation_index else None,
+                'verification_flag': interaction.verification_flag,
+                'satisfaction_raw': float(interaction.satisfaction_raw) if interaction.satisfaction_raw else None,
+                'interaction_date': interaction.interaction_date,
+                'summary': interaction.summary
             })
 
         return results
@@ -823,6 +819,33 @@ def get_topic_id_by_folder(source_folder: str) -> Optional[int]:
         return topic.id if topic else None
     except Exception as e:
         print(f"DATABASE: Error getting topic ID: {e}")
+        return None
+    finally:
+        session.close()
+
+
+def get_topic_id_by_label(label_en: str) -> Optional[int]:
+    """
+    Get the topic ID by its English label.
+    
+    Args:
+        label_en: English label (e.g., "Defence")
+        
+    Returns:
+        Topic ID or None if not found
+    """
+    session = get_session()
+    if session is None:
+        return None
+
+    try:
+        topic = session.query(Topic).filter(
+            Topic.label_en == label_en
+        ).one_or_none()
+        
+        return topic.id if topic else None
+    except Exception as e:
+        print(f"DATABASE: Error getting topic ID by label: {e}")
         return None
     finally:
         session.close()
