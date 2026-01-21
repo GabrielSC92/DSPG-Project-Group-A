@@ -419,27 +419,6 @@ def render_end_user_view() -> None:
     if st.session_state.selected_topic not in TOPICS:
         st.session_state.selected_topic = "All topics"
 
-    # Styling for the selectbox near the chat
-    st.markdown("""
-    <style>
-        .topic-composer {
-            background: rgba(15, 23, 42, 0.35);
-            border: 1px solid rgba(51, 65, 85, 0.8);
-            border-radius: 14px;
-            padding: 12px 14px;
-            margin-top: 8px;
-            margin-bottom: 10px;
-            backdrop-filter: blur(10px);
-        }
-        .topic-caption {
-            color: #94A3B8;
-            font-size: 0.8rem;
-            margin-top: 6px;
-        }
-    </style>
-    """,
-                unsafe_allow_html=True)
-
     st.markdown("### 💬 Ask a question")
 
     with st.container():
@@ -519,8 +498,8 @@ def render_end_user_view() -> None:
                     # Enable satisfaction rating (we only get here if subtopics matched)
                     st.session_state.awaiting_rating = True
 
-                #force rerun so the prompt block above actually renders now
-                st.rerun()
+                    # Force rerun so the satisfaction prompt renders
+                    st.rerun()
 
     else:
         st.chat_input("Chat disabled - configure API key first",
