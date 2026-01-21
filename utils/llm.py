@@ -722,16 +722,23 @@ def get_backend_info() -> Dict[str, str]:
     """Get info about the current backend."""
     if LLM_BACKEND == "ollama":
         return {
-            "backend": "Ollama (Local)",
-            "model": OLLAMA_MODEL,
-            "status": "✅ Running" if _ollama_available() else "❌ Not running"
+            "backend":
+            "Ollama (Local)",
+            "model":
+            OLLAMA_MODEL,
+            "status":
+            ":material/check_circle: Running"
+            if _ollama_available() else ":material/cancel: Not running"
         }
     else:
         return {
-            "backend": "Gemini (Cloud)",
-            "model": "gemini-2.0-flash",
+            "backend":
+            "Gemini (Cloud)",
+            "model":
+            "gemini-2.0-flash",
             "status":
-            "✅ Configured" if _gemini_available() else "❌ Not configured"
+            ":material/check_circle: Configured"
+            if _gemini_available() else ":material/cancel: Not configured"
         }
 
 
@@ -786,8 +793,9 @@ def send_message(
                 matched_subtopic_labels.append(st.get('subtopic', 'Unknown'))
 
     # Retrieve chunks from matched subtopics only
-    chunks = retrieve_chunks_by_subtopics(
-        " ".join(search_terms), subtopic_ids=relevant_subtopic_ids, k=12)
+    chunks = retrieve_chunks_by_subtopics(" ".join(search_terms),
+                                          subtopic_ids=relevant_subtopic_ids,
+                                          k=12)
 
     # Build context from filtered chunks only
     context = format_context(chunks) if chunks else ""
@@ -819,12 +827,13 @@ def send_message(
 # =============================================================================
 
 
-def synthesize_and_store(user_prompt: str,
-                         llm_response: str,
-                         satisfaction: float,
-                         user_id: str,
-                         topic: Optional[str] = None,
-                         matched_subtopics: List[str] = None) -> Tuple[bool, str]:
+def synthesize_and_store(
+        user_prompt: str,
+        llm_response: str,
+        satisfaction: float,
+        user_id: str,
+        topic: Optional[str] = None,
+        matched_subtopics: List[str] = None) -> Tuple[bool, str]:
     """
     Store interaction with local processing (no API calls).
     

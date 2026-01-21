@@ -11,7 +11,7 @@ from utils.auth import get_current_user, get_user_id
 def render_feedback_modal() -> None:
     """Render the feedback modal dialog."""
 
-    @st.dialog("💬 Send Feedback to Developers", width="large")
+    @st.dialog(":material/forum: Send Feedback to Developers", width="large")
     def feedback_dialog():
         user = get_current_user()
 
@@ -88,7 +88,7 @@ def render_feedback_modal() -> None:
                 st.rerun()
 
         with col1:
-            if st.button("📤 Submit Feedback",
+            if st.button(":material/send: Submit Feedback",
                          type="primary",
                          use_container_width=True,
                          key="submit_feedback"):
@@ -115,7 +115,7 @@ def render_feedback_modal() -> None:
                     print(f"FEEDBACK SUBMITTED: {feedback_data}")
 
                     st.success(
-                        "✅ Thank you! Your feedback has been submitted successfully."
+                        ":material/check_circle: Thank you! Your feedback has been submitted successfully."
                     )
 
                     # Close modal after brief delay
@@ -124,7 +124,7 @@ def render_feedback_modal() -> None:
 
                 else:
                     st.error(
-                        "⚠️ Please provide at least 10 characters of feedback."
+                        ":material/warning: Please provide at least 10 characters of feedback."
                     )
 
     # Trigger the dialog
@@ -140,7 +140,7 @@ def render_feedback_button(location: str = "sidebar") -> None:
     """
     button_container = st.sidebar if location == "sidebar" else st
 
-    if button_container.button("💬 Send Feedback",
+    if button_container.button(":material/chat: Send Feedback",
                                use_container_width=True,
                                key=f"feedback_btn_{location}"):
         st.session_state.show_feedback_modal = True

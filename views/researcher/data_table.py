@@ -30,8 +30,8 @@ with header_col2:
 
 # Privacy note
 st.info(
-    "⚠️ **Privacy Notice**: Raw chat content is never stored. Only synthesized summaries and metrics are available for analysis.",
-    icon="🔒")
+    ":material/warning: **Privacy Notice**: Raw chat content is never stored. Only synthesized summaries and metrics are available for analysis.",
+    icon=":material/lock:")
 
 
 def load_from_database() -> pd.DataFrame:
@@ -126,13 +126,15 @@ df, using_db = get_data()
 
 # Show data source indicator
 if using_db:
-    st.success(f"📊 Showing {len(df)} records from database", icon="✅")
+    st.success(f":material/bar_chart: Showing {len(df)} records from database",
+               icon=":material/check_circle:")
 else:
-    st.warning("📊 Showing demo data (database empty or not connected)",
-               icon="⚠️")
+    st.warning(
+        ":material/bar_chart: Showing demo data (database empty or not connected)",
+        icon=":material/warning:")
 
 # --- FILTERS SECTION ---
-st.markdown("### 🔍 Filters")
+st.markdown("### :material/filter_list: Filters")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -161,7 +163,7 @@ with col4:
                                          key="verification_filter")
 
 # Search box
-search_term = st.text_input("🔎 Search",
+search_term = st.text_input(":material/search: Search",
                             placeholder="Search across all columns...",
                             key="search_box")
 
@@ -223,12 +225,15 @@ with col5:
 st.markdown("---")
 
 # --- DATA TABLE ---
-st.markdown("### 📋 Records")
+st.markdown("### :material/list: Records")
 
 # Format the dataframe for display
 display_df = filtered_df.copy()
 display_df["Date"] = display_df["Date"].dt.strftime("%Y-%m-%d")
-display_df["Verified"] = display_df["Verified"].map({True: "✅", False: "❌"})
+display_df["Verified"] = display_df["Verified"].map({
+    True: ":material/check_circle:",
+    False: ":material/cancel:"
+})
 
 # Column configuration for better display
 column_config = {

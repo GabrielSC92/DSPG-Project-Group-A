@@ -256,7 +256,7 @@ def validate_password(password: str) -> tuple[bool, str]:
     return True, ""
 
 
-@st.dialog("📝 Create Account", width="small")
+@st.dialog(":material/edit_note: Create Account", width="small")
 def render_signup_dialog():
     """Render the sign-up dialog for new end-users."""
 
@@ -338,7 +338,7 @@ def render_signup_dialog():
 
             if errors:
                 for error in errors:
-                    st.error(f"⚠️ {error}")
+                    st.error(f":material/warning: {error}")
             else:
                 # Create the user (End-User only, 'U' access level)
                 user_id = generate_user_id()
@@ -351,10 +351,12 @@ def render_signup_dialog():
 
                 if success:
                     st.success(
-                        "✅ Account created successfully! You can now log in.")
+                        ":material/check_circle: Account created successfully! You can now log in."
+                    )
                     # Note: Don't auto-login, let them use the login form
                 else:
-                    st.error(f"❌ Registration failed: {message}")
+                    st.error(
+                        f":material/cancel: Registration failed: {message}")
 
     # Info note
     st.markdown("""
@@ -414,19 +416,19 @@ def render_login_page():
                 if email and password:
                     success, message = login_user(email, password)
                     if success:
-                        st.success(f"✅ {message}")
+                        st.success(f":material/check_circle: {message}")
                         st.rerun()
                     else:
                         st.markdown(f"""
                         <div class="error-message">
-                            ⚠️ {message}
+                            :material/warning: {message}
                         </div>
                         """,
                                     unsafe_allow_html=True)
                 else:
                     st.markdown("""
                     <div class="error-message">
-                        ⚠️ Please enter both email and password
+                        :material/warning: Please enter both email and password
                     </div>
                     """,
                                 unsafe_allow_html=True)
@@ -484,14 +486,16 @@ def render_sidebar():
                     unsafe_allow_html=True)
 
         # Logout button
-        if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
+        if st.button(":material/logout: Logout",
+                     use_container_width=True,
+                     key="logout_btn"):
             logout_user()
             st.rerun()
 
         st.markdown("---")
 
         # Feedback button (available to all users)
-        if st.button("💬 Send Feedback",
+        if st.button(":material/chat: Send Feedback",
                      use_container_width=True,
                      key="feedback_btn"):
             st.session_state.show_feedback_modal = True
@@ -522,19 +526,18 @@ def main():
         # Researcher multi-page navigation
         data_table = st.Page("views/researcher/data_table.py",
                              title="Data Table",
-                             icon="📊",
+                             icon=":material/table_chart:",
                              default=True)
         visualizations = st.Page("views/researcher/visualizations.py",
                                  title="Visualizations",
-                                 icon="📈")
+                                 icon=":material/trending_up:")
         export = st.Page("views/researcher/export.py",
                          title="Export",
-                         icon="💾")
+                         icon=":material/save:")
 
         nav = st.navigation(
             {
-                "📊 Analysis": [data_table, visualizations],
-                "📁 Data": [export]
+                "Analysis": [data_table, visualizations, export]
             },
             expanded=True)
         nav.run()

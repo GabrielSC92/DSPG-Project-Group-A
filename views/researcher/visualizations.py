@@ -67,7 +67,7 @@ def get_visualization_data():
 df = get_visualization_data()
 
 # --- VISUALIZATION CONTROLS ---
-st.markdown("### 🎛️ Controls")
+st.markdown("### :material/tune: Controls")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -109,7 +109,7 @@ colors = [
 
 # --- CHART RENDERING ---
 if chart_type == "Time Series":
-    st.markdown("### 📊 Satisfaction Trends Over Time")
+    st.markdown("### :material/bar_chart: Satisfaction Trends Over Time")
 
     # Aggregate by week or month
     if group_by == "Month":
@@ -163,7 +163,7 @@ elif chart_type == "Distribution":
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("### 📊 Topic Distribution")
+        st.markdown("### :material/bar_chart: Topic Distribution")
         topic_counts = filtered_df["Topic"].value_counts().reset_index()
         topic_counts.columns = ["Topic", "Count"]
 
@@ -181,7 +181,7 @@ elif chart_type == "Distribution":
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with col2:
-        st.markdown("### 📊 Satisfaction Distribution")
+        st.markdown("### :material/bar_chart: Satisfaction Distribution")
         fig_hist = px.histogram(filtered_df,
                                 x="Satisfaction",
                                 nbins=10,
@@ -202,7 +202,7 @@ elif chart_type == "Distribution":
         st.plotly_chart(fig_hist, use_container_width=True)
 
     # Source distribution bar chart
-    st.markdown("### 📊 Records by Source")
+    st.markdown("### :material/bar_chart: Records by Source")
     source_counts = filtered_df["Source"].value_counts().reset_index()
     source_counts.columns = ["Source", "Count"]
 
@@ -223,7 +223,7 @@ elif chart_type == "Distribution":
     st.plotly_chart(fig_bar, use_container_width=True)
 
 elif chart_type == "Comparison":
-    st.markdown("### 📊 Satisfaction by Topic")
+    st.markdown("### :material/bar_chart: Satisfaction by Topic")
 
     # Box plot
     fig_box = px.box(filtered_df,
@@ -245,7 +245,9 @@ elif chart_type == "Comparison":
     st.plotly_chart(fig_box, use_container_width=True)
 
     # Grouped bar comparison by source
-    st.markdown("### 📊 Average Satisfaction by Source & Verification Status")
+    st.markdown(
+        "### :material/bar_chart: Average Satisfaction by Source & Verification Status"
+    )
     comparison_df = filtered_df.groupby(
         ["Source", "Verified"])["Satisfaction"].mean().reset_index()
     comparison_df["Verified"] = comparison_df["Verified"].map({
@@ -277,7 +279,7 @@ elif chart_type == "Comparison":
     st.plotly_chart(fig_grouped, use_container_width=True)
 
 elif chart_type == "Correlation":
-    st.markdown("### 🔥 Correlation Heatmap")
+    st.markdown("### :material/grid_on: Correlation Heatmap")
 
     # Create correlation matrix by topic
     pivot_df = filtered_df.pivot_table(values=["Satisfaction", "Correlation"],
@@ -319,7 +321,7 @@ elif chart_type == "Correlation":
     st.plotly_chart(fig_heatmap, use_container_width=True)
 
     # Scatter plot: Satisfaction vs Correlation
-    st.markdown("### 📊 Satisfaction vs Correlation Index")
+    st.markdown("### :material/bar_chart: Satisfaction vs Correlation Index")
     fig_scatter = px.scatter(filtered_df,
                              x="Correlation",
                              y="Satisfaction",

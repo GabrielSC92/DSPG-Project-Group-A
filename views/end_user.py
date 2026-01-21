@@ -113,7 +113,7 @@ def render_api_status() -> bool:
 
     backend_info = get_backend_info()
     if "Ollama" in backend_info['backend']:
-        st.warning("⚠️ Ollama is not running")
+        st.warning(":material/warning: Ollama is not running")
         st.code("""# Start Ollama server:
 ollama serve
 
@@ -122,7 +122,9 @@ ollama pull llama3.2""",
                 language="bash")
         st.info("Make sure Ollama is installed: https://ollama.ai/download")
     else:
-        st.warning("⚠️ Please add your Gemini API keys to the `.env` file")
+        st.warning(
+            ":material/warning: Please add your Gemini API keys to the `.env` file"
+        )
         st.code("""GEMINI_API_KEY_LLM=your_llm_api_key_here
 GEMINI_API_KEY_AGENT=your_agent_api_key_here
 
@@ -157,20 +159,25 @@ def render_satisfaction_prompt(message_index: int) -> None:
         unsafe_allow_html=True,
     )
 
-    col_left, col_mid, col_right = st.columns([1, 8, 1])
+    LIKERT_OPTIONS = [
+        "Very dissatisfied",
+        "Dissatisfied",
+        "Neutral",
+        "Satisfied",
+        "Very satisfied",
+    ]
 
-    with col_left:
-        st.caption("😞")
+    LIKERT_TO_SCORE = {
+        "Very dissatisfied": 1,
+        "Dissatisfied": 2,
+        "Neutral": 3,
+        "Satisfied": 4,
+        "Very satisfied": 5,
+    }
 
-    with col_mid:
-        LIKERT_OPTIONS = [
-            "Very dissatisfied",
-            "Dissatisfied",
-            "Neutral",
-            "Satisfied",
-            "Very satisfied",
-        ]
+    col1, col2, col3, col4 = st.columns([1, 4, 1, 1])
 
+    with col2:
         likert_value = st.radio(
             "How satisfied are you with the Dutch government's performance on this topic?",
             LIKERT_OPTIONS,
@@ -180,22 +187,9 @@ def render_satisfaction_prompt(message_index: int) -> None:
             label_visibility="collapsed",
         )
 
-        LIKERT_TO_SCORE = {
-            "Very dissatisfied": 1,
-            "Dissatisfied": 2,
-            "Neutral": 3,
-            "Satisfied": 4,
-            "Very satisfied": 5,
-        }
+    satisfaction = LIKERT_TO_SCORE[likert_value]
 
-        satisfaction = LIKERT_TO_SCORE[likert_value]
-
-    with col_right:
-        st.caption("😊")
-
-    col1, col2 = st.columns([1, 4])
-
-    with col1:
+    with col3:
         if st.button("Submit",
                      key=f"submit_rating_{message_index}",
                      type="primary"):
@@ -247,12 +241,10 @@ def render_satisfaction_prompt(message_index: int) -> None:
             if saved_to_db:
                 st.toast(
                     "Thank you! Your rating has been recorded and verified.",
-                    icon="✅")
+                    icon=":material/check_circle:")
             else:
                 st.toast(f"Rating noted locally. {save_error or ''}",
                          icon="🏛️")
-    with col2:
-        st.caption("Your rating helps build indicators of government quality.")
 
 
 def render_chat_messages() -> None:
@@ -368,11 +360,6 @@ def render_end_user_view() -> None:
         """,
                     unsafe_allow_html=True)
 
-        # Ephemeral notice
-        st.info(
-            "💡 **Note**: Conversations are currently ephemeral. Your satisfaction ratings help build quantitative indicators of Dutch government performance.",
-            icon="ℹ️")
-
     # Render existing chat messages
     render_chat_messages()
 
@@ -423,7 +410,7 @@ def render_end_user_view() -> None:
     if st.session_state.selected_topic not in TOPICS:
         st.session_state.selected_topic = "All topics"
 
-    st.markdown("### 💬 Ask a question")
+    st.markdown("### :material/chat: Ask a question")
 
     with st.container():
         st.markdown('<div class="topic-composer">', unsafe_allow_html=True)
@@ -510,26 +497,10 @@ def render_end_user_view() -> None:
                       disabled=True,
                       key="user_chat_input_disabled")
 
-    # Stats in sidebar
+    # Clear chat button in sidebar
     with st.sidebar:
         st.markdown("---")
-        st.markdown("### 📊 Session Stats")
-        st.metric("Messages", len(st.session_state.chat_history))
-
-        if st.session_state.get('current_satisfaction'):
-            st.metric("Gov. Satisfaction",
-                      f"{st.session_state.current_satisfaction}/5")
-
-        # Model info
-        st.markdown("---")
-        st.markdown("### 🤖 Backend")
-        backend_info = get_backend_info()
-        st.caption(f"**{backend_info['backend']}**")
-        st.caption(f"Model: `{backend_info['model']}`")
-        st.caption(f"Status: {backend_info['status']}")
-
-        # Clear chat button
-        if st.button("🗑️ Clear Chat", use_container_width=True):
+        if st.button(":material/delete: Clear Chat", use_container_width=True):
             st.session_state.chat_history = []
             st.session_state.awaiting_rating = False
             st.session_state.current_satisfaction = None
