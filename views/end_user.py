@@ -140,8 +140,8 @@ def render_satisfaction_prompt(message_index: int) -> None:
     st.markdown(
         """
         <div style="
-            background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(30, 58, 138, 0.1));
-            border: 1px solid rgba(255, 107, 53, 0.3);
+            background: linear-gradient(135deg, rgba(255, 205, 0, 0.1), rgba(30, 58, 138, 0.1));
+            border: 1px solid rgba(255, 205, 0, 0.3);
             border-radius: 12px;
             padding: 1rem 1.25rem;
             margin: 1rem 0;
@@ -269,14 +269,18 @@ def render_end_user_view() -> None:
     """Render the complete End-User view with chat interface."""
     user = get_current_user()
 
-    # Page header
-    st.markdown("""
-    <div class="page-header">
-        <h1>🏛️ Quality of Dutch Government</h1>
-        <p>Ask questions about Dutch government quality and performance indicators</p>
-    </div>
-    """,
-                unsafe_allow_html=True)
+    # Page header with logo
+    header_col1, header_col2 = st.columns([4, 1])
+    with header_col1:
+        st.markdown("""
+        <div class="page-header">
+            <h1>🏛️ Quality of Dutch Government</h1>
+            <p>Ask questions about Dutch government quality and performance indicators</p>
+        </div>
+        """,
+                    unsafe_allow_html=True)
+    with header_col2:
+        st.image("Utrecht_University_logo_square.png", width=80)
 
     # Check API status
     api_ready = render_api_status()
@@ -319,12 +323,12 @@ def render_end_user_view() -> None:
             margin-bottom: 2rem;
         ">
             <div style="
-                background: rgba(255, 107, 53, 0.1);
-                border: 1px solid rgba(255, 107, 53, 0.2);
+                background: rgba(255, 205, 0, 0.1);
+                border: 1px solid rgba(255, 205, 0, 0.2);
                 border-radius: 12px;
                 padding: 1rem;
             ">
-                <p style="color: #FF6B35; font-size: 1.25rem; margin: 0;">📊</p>
+                <p style="color: #FFCD00; font-size: 1.25rem; margin: 0;">📊</p>
                 <p style="color: #F1F5F9; font-weight: 500; font-size: 0.9rem; margin: 0.5rem 0 0.25rem 0;">
                     Quality Indicators
                 </p>
