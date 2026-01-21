@@ -22,7 +22,7 @@ except ImportError:
 st.set_page_config(page_title="Quality of Dutch Government",
                    page_icon="🏛️",
                    layout="wide",
-                   initial_sidebar_state="expanded")
+                   initial_sidebar_state="collapsed")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -30,7 +30,8 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
     
     :root {
-        --dutch-orange: #FF6B35;
+        --uu-yellow: #FFCD00;
+        --uu-yellow-dark: #E6B800;
         --dutch-blue: #1E3A8A;
         --dutch-blue-light: #3B82F6;
         --bg-dark: #0F172A;
@@ -57,7 +58,7 @@ st.markdown("""
         border-radius: 20px;
         box-shadow: 
             0 25px 50px -12px rgba(0, 0, 0, 0.5),
-            0 0 0 1px rgba(255, 107, 53, 0.1),
+            0 0 0 1px rgba(255, 205, 0, 0.1),
             inset 0 1px 0 rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(10px);
     }
@@ -99,18 +100,18 @@ st.markdown("""
     }
     
     .stTextInput > div > div > input:focus {
-        border-color: var(--dutch-orange) !important;
-        box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.2) !important;
+        border-color: var(--uu-yellow) !important;
+        box-shadow: 0 0 0 2px rgba(255, 205, 0, 0.2) !important;
     }
     
     /* Button styling */
     .stButton > button {
         font-family: 'DM Sans', sans-serif !important;
         width: 100%;
-        background: linear-gradient(135deg, var(--dutch-orange) 0%, #E85A2A 100%) !important;
+        background: linear-gradient(135deg, var(--uu-yellow) 0%, var(--uu-yellow-dark) 100%) !important;
         border: none !important;
         border-radius: 10px !important;
-        color: white !important;
+        color: #1E293B !important;
         font-weight: 600 !important;
         padding: 0.75rem 1.5rem !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
@@ -118,7 +119,7 @@ st.markdown("""
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 10px 25px -5px rgba(255, 107, 53, 0.4) !important;
+        box-shadow: 0 10px 25px -5px rgba(255, 205, 0, 0.4) !important;
     }
     
     /* Error message styling */
@@ -374,6 +375,11 @@ def render_signup_dialog():
 
 def render_login_page():
     """Render the login page with authentication form."""
+
+    # Logo at top right
+    logo_col1, logo_col2 = st.columns([4, 1])
+    with logo_col2:
+        st.image("uu_white_text_banner.png")
 
     # Center the login form
     col1, col2, col3 = st.columns([1, 2, 1])

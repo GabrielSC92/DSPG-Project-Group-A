@@ -21,13 +21,17 @@ from datetime import datetime
 
 # Make sure imports from project root work
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from utils.database import get_session  # uses DATABASE_URL / DB_PATH from .env
-from utils.llm import summarize_text  # Import summary function
+from utils.llm import summarize_text, generate_topic_label, generate_subtopics_batch  # Import LLM functions
 
-# Import your models (must exist in utils/database.py)
-from utils.database import RagDocument, RagChunk  # noqa: F401
+# Import your models and functions (must exist in utils/database.py)
+from utils.database import (RagDocument, RagChunk, Topic, SubTopic,
+                            upsert_topic, update_topic_counts,
+                            get_or_create_subtopic, get_topic_id_by_folder,
+                            update_subtopic_counts)  # noqa: F401
 
 
 def extract_text_from_pdf(pdf_path: Path) -> tuple[str, list[tuple[int, int]]]:
@@ -64,8 +68,7 @@ def extract_text_from_pdf(pdf_path: Path) -> tuple[str, list[tuple[int, int]]]:
     except Exception as e:
         raise RuntimeError(
             f"Could not extract text from PDF {pdf_path.name}. "
-            f"Install one of: pymupdf OR pypdf. Original error: {e}"
-        )
+            f"Install one of: pymupdf OR pypdf. Original error: {e}")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -97,20 +100,24 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
-def upsert_document(session, doc_key: str, source_folder: str, file_name: str, file_path: str, summary: str | None = None) -> int:
+def upsert_document(session,
+                    doc_key: str,
+                    source_folder: str,
+                    file_name: str,
+                    file_path: str,
+                    summary: str | None = None) -> int:
     """
     Create document row if missing, otherwise update basic metadata and summary.
     Returns RagDocument.id
     """
-    doc = session.query(RagDocument).filter(RagDocument.doc_key == doc_key).one_or_none()
+    doc = session.query(RagDocument).filter(
+        RagDocument.doc_key == doc_key).one_or_none()
     if doc is None:
-        doc = RagDocument(
-            doc_key=doc_key,
-            source_folder=source_folder,
-            file_name=file_name,
-            file_path=file_path,
-            summary=summary
-        )
+        doc = RagDocument(doc_key=doc_key,
+                          source_folder=source_folder,
+                          file_name=file_name,
+                          file_path=file_path,
+                          summary=summary)
         session.add(doc)
         session.flush()  # get doc.id
     else:
@@ -125,23 +132,38 @@ def upsert_document(session, doc_key: str, source_folder: str, file_name: str, f
     return doc.id
 
 
-def replace_chunks_for_document(session, document_id: int, chunks: list[str]) -> int:
+def replace_chunks_for_document(session,
+                                document_id: int,
+                                chunks: list[str],
+                                subtopic_ids: list[int] = None) -> int:
     """
     Delete existing chunks for a doc and insert the new ones.
-    Returns number of inserted chunks.
+    Optionally links chunks to subtopics.
+    
+    Args:
+        session: Database session
+        document_id: Document ID
+        chunks: List of chunk texts
+        subtopic_ids: Optional list of subtopic IDs (same length as chunks)
+        
+    Returns:
+        Number of inserted chunks.
     """
     # delete existing
-    session.query(RagChunk).filter(RagChunk.document_id == document_id).delete()
+    session.query(RagChunk).filter(
+        RagChunk.document_id == document_id).delete()
 
     # insert new
     for idx, ch in enumerate(chunks):
-        session.add(RagChunk(
-            document_id=document_id,
-            chunk_index=idx,
-            page_start=None,
-            page_end=None,
-            chunk_text=ch
-        ))
+        subtopic_id = subtopic_ids[idx] if subtopic_ids and idx < len(
+            subtopic_ids) else None
+        session.add(
+            RagChunk(document_id=document_id,
+                     chunk_index=idx,
+                     subtopic_id=subtopic_id,
+                     page_start=None,
+                     page_end=None,
+                     chunk_text=ch))
 
     return len(chunks)
 
@@ -161,10 +183,22 @@ def get_source_folder(root: Path, pdf_path: Path) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=str, default="data/raw", help="Root folder containing categorized PDF folders")
-    parser.add_argument("--chunk-size", type=int, default=1500, help="Chunk size in characters")
-    parser.add_argument("--overlap", type=int, default=250, help="Overlap in characters")
-    parser.add_argument("--limit", type=int, default=0, help="Limit number of PDFs processed (0 = no limit)")
+    parser.add_argument("--root",
+                        type=str,
+                        default="data/raw",
+                        help="Root folder containing categorized PDF folders")
+    parser.add_argument("--chunk-size",
+                        type=int,
+                        default=1500,
+                        help="Chunk size in characters")
+    parser.add_argument("--overlap",
+                        type=int,
+                        default=250,
+                        help="Overlap in characters")
+    parser.add_argument("--limit",
+                        type=int,
+                        default=0,
+                        help="Limit number of PDFs processed (0 = no limit)")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -181,7 +215,9 @@ def main():
 
     session = get_session()
     if session is None:
-        raise RuntimeError("Database session could not be created. Check DATABASE_URL / DB_PATH in .env")
+        raise RuntimeError(
+            "Database session could not be created. Check DATABASE_URL / DB_PATH in .env"
+        )
 
     processed = 0
     total_chunks = 0
@@ -217,7 +253,12 @@ def main():
                     print(f"✗ ({summary})")
                     summary = None
 
-                doc_id = upsert_document(session, doc_key, source_folder, file_name, file_path, summary=summary)
+                doc_id = upsert_document(session,
+                                         doc_key,
+                                         source_folder,
+                                         file_name,
+                                         file_path,
+                                         summary=summary)
                 inserted = replace_chunks_for_document(session, doc_id, chunks)
 
                 session.commit()
@@ -239,6 +280,183 @@ def main():
     print(f"Failed PDFs    : {failed}")
     print(f"Total chunks   : {total_chunks}")
     print("======================\n")
+
+    # Generate topics after ingestion (creates its own session)
+    print("[*] Generating topics from ingested documents...")
+    generate_topics_from_documents(root)
+
+
+def generate_topics_from_documents(root: Path, session=None) -> None:
+    """
+    Generate English topic labels for each unique source folder based on sample chunks.
+    
+    This function:
+    1. Finds unique source folders from ingested documents
+    2. Samples chunks from each folder
+    3. Uses LLM to generate an English topic label
+    4. Stores topics in the database
+    """
+    if session is None:
+        session = get_session()
+        if session is None:
+            print("[X] Could not create database session for topic generation")
+            return
+
+    try:
+        # Get unique source folders with their document counts
+        from sqlalchemy import func
+        folder_counts = session.query(
+            RagDocument.source_folder,
+            func.count(RagDocument.id).label('count')).group_by(
+                RagDocument.source_folder).all()
+
+        if not folder_counts:
+            print("[!] No documents found for topic generation")
+            return
+
+        print(f"[*] Found {len(folder_counts)} unique source folder(s)")
+
+        topic_labels = {
+        }  # Store folder -> label mapping for subtopic generation
+
+        for source_folder, doc_count in folder_counts:
+            # Get sample chunks from this folder for context
+            sample_chunks = session.query(RagChunk.chunk_text).join(
+                RagDocument, RagChunk.document_id == RagDocument.id).filter(
+                    RagDocument.source_folder == source_folder).limit(3).all()
+
+            # Combine sample chunks for context
+            sample_text = " ".join([c[0][:500] for c in sample_chunks
+                                    ]) if sample_chunks else ""
+
+            # Generate English topic label using LLM
+            print(f"[*] Generating topic label for '{source_folder}'...",
+                  end=" ",
+                  flush=True)
+            success, label = generate_topic_label(source_folder, sample_text)
+
+            if success:
+                print(f"✓ -> '{label}'")
+                # Store topic in database
+                save_ok, msg = upsert_topic(source_folder, label, doc_count)
+                if not save_ok:
+                    print(f"    [!] Failed to save topic: {msg}")
+                topic_labels[source_folder] = label
+            else:
+                # Fallback: capitalize the folder name
+                fallback_label = source_folder.replace("_", " ").replace(
+                    "-", " ").title()
+                print(f"✗ (using fallback: '{fallback_label}')")
+                upsert_topic(source_folder, fallback_label, doc_count)
+                topic_labels[source_folder] = fallback_label
+
+        # Update document counts for all topics
+        update_topic_counts()
+        print(f"[OK] Topics generated and saved to database")
+
+        # Close this session before generating subtopics
+        session.close()
+
+        # Now generate subtopics for all chunks
+        print("\n[*] Generating sub-topics for chunks...")
+        generate_subtopics_for_chunks(topic_labels)
+
+    except Exception as e:
+        print(f"[X] Error generating topics: {e}")
+        if session:
+            session.close()
+
+
+def generate_subtopics_for_chunks(topic_labels: dict) -> None:
+    """
+    Generate sub-topic labels at the DOCUMENT level (not per-chunk).
+    Each document gets one subtopic derived from its summary.
+    All chunks from that document share the same subtopic.
+    
+    This is much faster and creates meaningful groupings:
+    - ~24 documents = ~24 subtopics (instead of ~1700 per-chunk subtopics)
+    - Agent reads ~24 labels instead of 1000+
+    
+    Args:
+        topic_labels: Dict mapping source_folder -> English topic label
+    """
+    from utils.llm import generate_subtopic_from_summary
+
+    session = get_session()
+    if session is None:
+        print("[X] Could not create database session for subtopic generation")
+        return
+
+    try:
+        # Process each topic
+        for source_folder, topic_label in topic_labels.items():
+            # Get topic ID
+            topic = session.query(Topic).filter(
+                Topic.source_folder == source_folder.lower()).one_or_none()
+
+            if not topic:
+                print(f"[!] Topic not found for folder: {source_folder}")
+                continue
+
+            topic_id = topic.id
+
+            # Get all documents for this topic
+            documents = session.query(RagDocument).filter(
+                RagDocument.source_folder == source_folder).all()
+
+            if not documents:
+                print(f"[*] No documents for '{topic_label}'")
+                continue
+
+            print(
+                f"[*] Generating sub-topics for {len(documents)} documents in '{topic_label}'..."
+            )
+
+            for doc_num, doc in enumerate(documents, 1):
+                print(f"    [{doc_num}/{len(documents)}] {doc.file_name}...",
+                      end=" ",
+                      flush=True)
+
+                # Generate subtopic from document summary (or filename if no summary)
+                if doc.summary:
+                    success, subtopic_label = generate_subtopic_from_summary(
+                        doc.summary, topic_label)
+                else:
+                    # Fallback: use cleaned filename
+                    subtopic_label = doc.file_name.replace('+', ' ').replace(
+                        '.pdf', '').replace('_', ' ')
+                    subtopic_label = subtopic_label[:80].title()
+                    success = True
+
+                if not success:
+                    subtopic_label = f"{topic_label} - {doc.file_name[:30]}"
+
+                print(f"-> '{subtopic_label}'")
+
+                # Create/get subtopic
+                subtopic_id = get_or_create_subtopic(session, topic_id,
+                                                     subtopic_label)
+
+                # Update ALL chunks from this document to use this subtopic
+                session.query(RagChunk).filter(
+                    RagChunk.document_id == doc.id).update(
+                        {RagChunk.subtopic_id: subtopic_id})
+
+                session.commit()
+
+            print(f"    ✓ {topic_label}: {len(documents)} documents tagged")
+
+        # Update subtopic counts
+        update_subtopic_counts()
+        print("[OK] Sub-topics generated and linked to chunks")
+
+    except Exception as e:
+        session.rollback()
+        print(f"[X] Error generating subtopics: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        session.close()
 
 
 if __name__ == "__main__":

@@ -15,14 +15,18 @@ try:
 except ImportError:
     DB_AVAILABLE = False
 
-# Page configuration
-st.markdown("""
-<div class="page-header">
-    <h1>📊 Data Table</h1>
-    <p>View and analyze quantitative indicators extracted from government reports</p>
-</div>
-""",
-            unsafe_allow_html=True)
+# Page configuration with logo
+header_col1, header_col2 = st.columns([4, 1])
+with header_col1:
+    st.markdown("""
+    <div class="page-header">
+        <h1>📊 Data Table</h1>
+        <p>View and analyze quantitative indicators extracted from government reports</p>
+    </div>
+    """,
+                unsafe_allow_html=True)
+with header_col2:
+    st.image("Utrecht_University_logo_square.png", width=80)
 
 # Privacy note
 st.info(

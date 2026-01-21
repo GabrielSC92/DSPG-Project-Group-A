@@ -13,11 +13,14 @@ from utils.llm import (init_gemini, send_message, clear_chat_session,
 
 # Try to import database functions
 try:
-    from utils.database import save_interaction, is_database_connected
+    from utils.database import save_interaction, is_database_connected, get_available_topics
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
 
+    def get_available_topics():
+        """Fallback if database not available."""
+        return []
 
 
 def render_api_status() -> bool:
@@ -137,8 +140,8 @@ def render_satisfaction_prompt(message_index: int) -> None:
     st.markdown(
         """
         <div style="
-            background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(30, 58, 138, 0.1));
-            border: 1px solid rgba(255, 107, 53, 0.3);
+            background: linear-gradient(135deg, rgba(255, 205, 0, 0.1), rgba(30, 58, 138, 0.1));
+            border: 1px solid rgba(255, 205, 0, 0.3);
             border-radius: 12px;
             padding: 1rem 1.25rem;
             margin: 1rem 0;
@@ -224,11 +227,19 @@ def render_satisfaction_prompt(message_index: int) -> None:
 
                     # Call Synthesis API → Correlation → Verification → DB Store
                     # Note: Raw chat content is NOT stored, only synthesized summary
+                    # Pass the selected topic and matched subtopics for the summary
+                    selected_topic = st.session_state.get(
+                        'selected_topic', 'All topics')
+                    last_data = st.session_state.get('last_synthesis_data', {})
+                    matched_subtopics = last_data.get('matched_subtopics',
+                                                      []) if last_data else []
                     success, result = run_synthesis_and_store(
                         user_prompt=user_prompt,
                         llm_response=llm_response,
                         satisfaction=float(satisfaction),
-                        user_id=user_id)
+                        user_id=user_id,
+                        topic=selected_topic,
+                        matched_subtopics=matched_subtopics)
                     saved_to_db = success
                     if not success:
                         save_error = result
@@ -258,14 +269,18 @@ def render_end_user_view() -> None:
     """Render the complete End-User view with chat interface."""
     user = get_current_user()
 
-    # Page header
-    st.markdown("""
-    <div class="page-header">
-        <h1>🏛️ Quality of Dutch Government</h1>
-        <p>Ask questions about Dutch government quality and performance indicators</p>
-    </div>
-    """,
-                unsafe_allow_html=True)
+    # Page header with logo
+    header_col1, header_col2 = st.columns([4, 1])
+    with header_col1:
+        st.markdown("""
+        <div class="page-header">
+            <h1>🏛️ Quality of Dutch Government</h1>
+            <p>Ask questions about Dutch government quality and performance indicators</p>
+        </div>
+        """,
+                    unsafe_allow_html=True)
+    with header_col2:
+        st.image("Utrecht_University_logo_square.png", width=80)
 
     # Check API status
     api_ready = render_api_status()
@@ -308,12 +323,12 @@ def render_end_user_view() -> None:
             margin-bottom: 2rem;
         ">
             <div style="
-                background: rgba(255, 107, 53, 0.1);
-                border: 1px solid rgba(255, 107, 53, 0.2);
+                background: rgba(255, 205, 0, 0.1);
+                border: 1px solid rgba(255, 205, 0, 0.2);
                 border-radius: 12px;
                 padding: 1rem;
             ">
-                <p style="color: #FF6B35; font-size: 1.25rem; margin: 0;">📊</p>
+                <p style="color: #FFCD00; font-size: 1.25rem; margin: 0;">📊</p>
                 <p style="color: #F1F5F9; font-weight: 500; font-size: 0.9rem; margin: 0.5rem 0 0.25rem 0;">
                     Quality Indicators
                 </p>
@@ -368,41 +383,45 @@ def render_end_user_view() -> None:
         if current_index > st.session_state.last_rated_index:
             render_satisfaction_prompt(current_index)
 
-    #topics for filter
-    TOPICS = [
-        "All topics",
-        "Defence",
-        "Finance",
-        "Education",
-        "Health",
-        "Justice",
-        "Foreign",
-        "Domestic",
-        "Audit Office",
-    ]
+    # Load topics dynamically from database
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def load_topics():
+        """Load available topics from database."""
+        topics_list = ["All topics"]  # Always include "All topics" option
+
+        if DB_AVAILABLE:
+            db_topics = get_available_topics()
+            if db_topics:
+                # Add English labels from database
+                for topic in db_topics:
+                    label = topic.get('label_en',
+                                      topic.get('source_folder', '').title())
+                    if label and label not in topics_list:
+                        topics_list.append(label)
+
+        # Fallback: if no topics in DB, use defaults
+        if len(topics_list) == 1:
+            topics_list.extend([
+                "Defence",
+                "Finance",
+                "Education",
+                "Health",
+                "Justice",
+                "Foreign Affairs",
+                "Domestic Affairs",
+                "Audit Office",
+            ])
+
+        return topics_list
+
+    TOPICS = load_topics()
 
     if "selected_topic" not in st.session_state:
         st.session_state.selected_topic = "All topics"
 
-    # Styling for the selectbox near the chat
-    st.markdown("""
-    <style>
-        .topic-composer {
-            background: rgba(15, 23, 42, 0.35);
-            border: 1px solid rgba(51, 65, 85, 0.8);
-            border-radius: 14px;
-            padding: 12px 14px;
-            margin-top: 8px;
-            margin-bottom: 10px;
-            backdrop-filter: blur(10px);
-        }
-        .topic-caption {
-            color: #94A3B8;
-            font-size: 0.8rem;
-            margin-top: 6px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+    # Ensure selected topic is still valid (in case topics changed)
+    if st.session_state.selected_topic not in TOPICS:
+        st.session_state.selected_topic = "All topics"
 
     st.markdown("### 💬 Ask a question")
 
@@ -421,13 +440,10 @@ def render_end_user_view() -> None:
         with col_hint:
             st.markdown(
                 '<div class="topic-caption">Filters the document database for retrieval.</div>',
-                unsafe_allow_html=True
-            )
+                unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-
-    
     # Chat input (only enabled if API is ready)
     if api_ready:
         if prompt := st.chat_input(
@@ -442,52 +458,52 @@ def render_end_user_view() -> None:
             # Only process if history length matches what we expect
             # (i.e., we haven't already added messages for this prompt)
             if current_history_len == expected_len:
-            # Add user message to history
-                st.session_state.chat_history.append({
-                    "role": "user",
-                    "content": prompt
-            })
+                # First check with Agent if query matches any subtopics
+                with st.spinner("Agent analyzing query..."):
+                    success, response, synthesis_data = send_message(
+                        prompt, topic=st.session_state.selected_topic)
 
-                # Display user message
-                with st.chat_message("user", avatar="🧑‍💻"):
-                    st.markdown(prompt)
+                # If query didn't match sources, show info and don't add to chat
+                if not success:
+                    st.info(response)
+                    st.session_state.awaiting_rating = False
+                    st.session_state.last_synthesis_data = None
+                else:
+                    # Query matched sources - show full chat interaction
+                    # Add user message to history
+                    st.session_state.chat_history.append({
+                        "role": "user",
+                        "content": prompt
+                    })
 
-                # Get response from Agent → LLM pipeline
-                with st.chat_message("assistant", avatar="🏛️"):
-                    with st.spinner("Agent analyzing query..."):
-                        success, response, synthesis_data = send_message(
-                            prompt,
-                            topic=st.session_state.selected_topic
-                        )
+                    # Display user message
+                    with st.chat_message("user", avatar="🧑‍💻"):
+                        st.markdown(prompt)
 
+                    # Display assistant response
+                    with st.chat_message("assistant", avatar="🏛️"):
+                        st.markdown(response)
 
-                        # Store synthesis data for later use when user submits satisfaction
-                        if synthesis_data:
-                            st.session_state.last_synthesis_data = synthesis_data
+                    # Store synthesis data for satisfaction rating
+                    st.session_state.last_synthesis_data = synthesis_data
 
-                        if success:
-                            st.markdown(response)
-                        else:
-                            st.warning(response)
+                    # Add assistant message to history
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response
+                    })
 
-                        # Add assistant message to history (ALWAYS)
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": response
-                        })
+                    # Update processed count
+                    st.session_state.processed_message_count += 1
 
-                # Update processed count AFTER adding both messages
-                st.session_state.processed_message_count += 1
+                    # Update interaction count
+                    update_interaction_count()
 
-                # Update interaction count
-                update_interaction_count()
+                    # Enable satisfaction rating (we only get here if subtopics matched)
+                    st.session_state.awaiting_rating = True
 
-                # Set flag for satisfaction rating
-                st.session_state.awaiting_rating = True
-
-                #force rerun so the prompt block above actually renders now
-                st.rerun()
-
+                    # Force rerun so the satisfaction prompt renders
+                    st.rerun()
 
     else:
         st.chat_input("Chat disabled - configure API key first",
