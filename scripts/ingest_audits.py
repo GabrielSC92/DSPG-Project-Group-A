@@ -199,6 +199,11 @@ def main():
                         type=int,
                         default=0,
                         help="Limit number of PDFs processed (0 = no limit)")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=
+        "Force re-processing of existing documents (default: skip existing)")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -222,9 +227,11 @@ def main():
     processed = 0
     total_chunks = 0
     failed = 0
+    skipped = 0
 
     print(f"[*] Ingest starting: {len(pdfs)} PDF(s) from {root}")
     print(f"[*] Chunking: size={args.chunk_size}, overlap={args.overlap}")
+    print(f"[*] Skip existing: {not args.force} (use --force to re-process)")
     print(f"[*] Summaries will be generated during ingestion\n")
 
     try:
@@ -236,6 +243,15 @@ def main():
 
                 # stable key so re-runs update same doc
                 doc_key = f"{source_folder}/{file_name}"
+
+                # Skip if document already exists (unless --force is used)
+                if not args.force:
+                    existing = session.query(RagDocument).filter(
+                        RagDocument.doc_key == doc_key).first()
+                    if existing:
+                        print(f"[SKIP] Already exists: {doc_key}")
+                        skipped += 1
+                        continue
 
                 text, _ = extract_text_from_pdf(pdf_path)
                 chunks = chunk_text(text, args.chunk_size, args.overlap)
@@ -277,6 +293,7 @@ def main():
 
     print("\n=== Ingest summary ===")
     print(f"Processed PDFs : {processed}")
+    print(f"Skipped PDFs   : {skipped}")
     print(f"Failed PDFs    : {failed}")
     print(f"Total chunks   : {total_chunks}")
     print("======================\n")
