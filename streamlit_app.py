@@ -6,6 +6,7 @@ Main Streamlit Application with Authentication
 import streamlit as st
 import re
 import uuid
+from streamlit_js_eval import streamlit_js_eval
 from utils.auth import (init_session_state, login_user, logout_user,
                         get_current_user, is_authenticated, get_access_level,
                         AccessLevel)
@@ -490,7 +491,8 @@ def render_sidebar():
                      use_container_width=True,
                      key="logout_btn"):
             logout_user()
-            st.rerun()
+            # Full page refresh to clear sidebar artifacts when switching user types
+            streamlit_js_eval(js_expressions="parent.window.location.reload()")
 
         st.markdown("---")
 
@@ -535,11 +537,8 @@ def main():
                          title="Export",
                          icon=":material/save:")
 
-        nav = st.navigation(
-            {
-                "Analysis": [data_table, visualizations, export]
-            },
-            expanded=True)
+        nav = st.navigation({"Analysis": [data_table, visualizations, export]},
+                            expanded=True)
         nav.run()
 
     else:
