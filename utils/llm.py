@@ -676,6 +676,33 @@ def _extract_keywords_local(prompt: str) -> List[str]:
     return keywords[:10]
 
 
+def _topic_to_folder(topic_label: str) -> Optional[str]:
+    """
+    Map a topic label (e.g., 'Defence', 'Sustainability') back to its source folder.
+    Used for fallback keyword search when Agent doesn't find matching subtopics.
+    """
+    try:
+        from utils.database import get_engine
+        engine = get_engine()
+        if engine is None:
+            return None
+        
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("SELECT source_folder FROM topics WHERE label_en = :label"),
+                {"label": topic_label}
+            ).fetchone()
+            
+            if result:
+                return result[0]
+    except Exception:
+        pass
+    
+    # Fallback: convert label to likely folder name
+    return topic_label.lower().replace(' ', '_')
+
+
 # =============================================================================
 # PUBLIC API
 # =============================================================================
@@ -744,58 +771,97 @@ def get_backend_info() -> Dict[str, str]:
 
 def send_message(
         prompt: str,
-        topic: Optional[str] = None
+        topic: Optional[str] = None,
+        subtopic: Optional[str] = None
 ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
     Main pipeline - works with both Ollama and Gemini.
-    Implements smart filtering using sub-topics: Agent reads compact subtopic labels,
-    selects relevant ones, retrieves chunks from only those subtopics.
+    
+    Retrieval hierarchy (drill-down):
+    1. User selected specific subtopic → retrieve from that subtopic directly
+    2. Agent finds matching subtopics → use those
+    3. User selected topic (but no subtopic) → keyword search within topic
+    4. Nothing matched → show info message
+    
+    Args:
+        prompt: User's question
+        topic: Selected topic label (e.g., "Sustainability", "Defence")
+        subtopic: Selected subtopic label (e.g., "Climate Policy Impact Analysis")
     
     Returns:
         (success, response_text, metadata)
     """
-    # STEP 1: Get available subtopics for agent to filter (very compact!)
+    # STEP 1: Get available subtopics for agent/lookup
     try:
         from utils.database import get_all_subtopics_with_topics
         subtopics = get_all_subtopics_with_topics()
     except Exception:
         subtopics = []
 
-    # STEP 2: Agent - validate query and filter by subtopics
-    agent_result = _call_agent(prompt, subtopics, topic_filter=topic)
-
-    if not agent_result["valid"]:
-        return False, (
-            f"I cannot help with this query. {agent_result['reason']}\n\n"
-            "I can help with:\n"
-            "- Dutch government audit reports\n"
-            "- Ministry performance and budgets\n"
-            "- Policy evaluations"), None
-
-    # STEP 3: Check if query matches any subtopics
-    search_terms = agent_result["search_terms"]
-    relevant_subtopic_ids = agent_result.get("relevant_subtopic_ids", [])
-
-    # If no subtopics matched, block the query - don't call LLM
-    if not relevant_subtopic_ids:
-        return False, (
-            "Your query didn't match any specific documents in our sources.\n\n"
-            "Please try asking about topics covered in our audit reports, such as:\n"
-            "- Defence procurement and budgets\n"
-            "- Ministry financial audits\n"
-            "- Government accountability reports"), None
-
-    # Get subtopic labels for the matched IDs (for summary)
+    # Extract search terms locally (used for ranking within retrieved chunks)
+    search_terms = _extract_keywords_local(prompt)
+    
     matched_subtopic_labels = []
-    if subtopics:
-        for st in subtopics:
-            if st.get('subtopic_id') in relevant_subtopic_ids:
-                matched_subtopic_labels.append(st.get('subtopic', 'Unknown'))
+    chunks = []
+    relevant_subtopic_ids = []
 
-    # Retrieve chunks from matched subtopics only
-    chunks = retrieve_chunks_by_subtopics(" ".join(search_terms),
-                                          subtopic_ids=relevant_subtopic_ids,
-                                          k=12)
+    # STEP 2: HIERARCHY - Try each level in order
+    
+    # Level 1: User selected a specific subtopic → use it directly (skip Agent)
+    if subtopic:
+        # Look up subtopic ID from label
+        subtopic_id = None
+        for st in subtopics:
+            if st.get('subtopic') == subtopic:
+                subtopic_id = st.get('subtopic_id')
+                break
+        
+        if subtopic_id:
+            relevant_subtopic_ids = [subtopic_id]
+            chunks = retrieve_chunks_by_subtopics(" ".join(search_terms),
+                                                  subtopic_ids=relevant_subtopic_ids,
+                                                  k=12)
+            matched_subtopic_labels = [subtopic]
+    
+    # Level 2: No subtopic selected or no chunks found → try Agent matching
+    if not chunks:
+        agent_result = _call_agent(prompt, subtopics, topic_filter=topic)
+
+        if not agent_result["valid"]:
+            return False, (
+                f"I cannot help with this query. {agent_result['reason']}\n\n"
+                "I can help with:\n"
+                "- Dutch government audit reports\n"
+                "- Ministry performance and budgets\n"
+                "- Policy evaluations"), None
+
+        relevant_subtopic_ids = agent_result.get("relevant_subtopic_ids", [])
+        search_terms = agent_result.get("search_terms", search_terms)
+
+        if relevant_subtopic_ids:
+            # Agent found matching subtopics
+            for st in subtopics:
+                if st.get('subtopic_id') in relevant_subtopic_ids:
+                    matched_subtopic_labels.append(st.get('subtopic', 'Unknown'))
+
+            chunks = retrieve_chunks_by_subtopics(" ".join(search_terms),
+                                                  subtopic_ids=relevant_subtopic_ids,
+                                                  k=12)
+    
+    # Level 3: Still no chunks, but user selected a topic → keyword search within topic
+    if not chunks and topic and topic != "All topics":
+        chunks = retrieve_chunks(" ".join(search_terms),
+                                 k=12,
+                                 source_folder=_topic_to_folder(topic))
+        matched_subtopic_labels = [f"{topic} (keyword search)"]
+    
+    # Level 4: Nothing worked → show helpful message
+    if not chunks:
+        return False, (
+            "No relevant content found for your query.\n\n"
+            "Please try:\n"
+            "- Selecting a specific topic or sub-topic from the dropdowns\n"
+            "- Rephrasing your question with different keywords"), None
 
     # Build context from filtered chunks only
     context = format_context(chunks) if chunks else ""

@@ -360,10 +360,17 @@ def chat_input_fragment(api_ready: bool, topics: list) -> None:
 
             # Only process if history length matches what we expect
             if current_history_len == expected_len:
+                # Get selected subtopic (if any)
+                selected_subtopic = st.session_state.get(
+                    'selected_subtopic', 'All sub-topics')
+                subtopic_param = None if selected_subtopic == "All sub-topics" else selected_subtopic
+
                 # First check with Agent if query matches any subtopics
                 with st.spinner("Agent analyzing query..."):
                     success, response, synthesis_data = send_message(
-                        prompt, topic=st.session_state.selected_topic)
+                        prompt,
+                        topic=st.session_state.selected_topic,
+                        subtopic=subtopic_param)
 
                 # If query didn't match sources, show info and don't add to chat
                 if not success:
