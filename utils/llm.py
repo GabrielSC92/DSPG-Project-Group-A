@@ -108,7 +108,7 @@ def _ollama_generate(prompt: str,
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_ctx": 4096,  # Context window
+                "num_ctx": 16384,  # Context window (increased from 4096)
             }
         }
 
@@ -141,7 +141,7 @@ def _ollama_chat(messages: List[Dict], system: str = "") -> Tuple[bool, str]:
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_ctx": 4096,
+                "num_ctx": 16384,  # Context window (increased from 4096)
             }
         }
 
