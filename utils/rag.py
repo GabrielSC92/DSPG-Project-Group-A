@@ -247,16 +247,21 @@ def retrieve_chunks_by_subtopics(query: str,
                                  subtopic_ids: List[int],
                                  k: int = 12) -> List[Dict[str, Any]]:
     """
-    Retrieve chunks filtered by subtopic IDs with optional keyword ranking.
+    Retrieve chunks filtered by subtopic IDs with keyword-based ranking.
     This is the primary retrieval method when the Agent has selected relevant subtopics.
     
+    Ranking strategy (simple but effective):
+    1. Count keyword matches (more matches = higher priority)
+    2. Prefer earlier chunks (chunk_index 0-2 often contain summaries/intros)
+    3. Limit to k chunks maximum
+    
     Args:
-        query: Search query for optional keyword ranking
+        query: Search query for keyword ranking
         subtopic_ids: List of subtopic IDs to retrieve chunks from
-        k: Number of chunks to retrieve
+        k: Number of chunks to retrieve (default 12, max enforced)
         
     Returns:
-        List of chunk dicts with metadata
+        List of chunk dicts with metadata, ranked by relevance
     """
     engine = get_engine()
     if engine is None:
@@ -264,6 +269,9 @@ def retrieve_chunks_by_subtopics(query: str,
 
     if not subtopic_ids:
         return []
+
+    # Enforce maximum chunk limit to prevent context overflow
+    k = min(k, 15)
 
     params: Dict[str, Any] = {}
 
@@ -273,19 +281,24 @@ def retrieve_chunks_by_subtopics(query: str,
     for i, st_id in enumerate(subtopic_ids):
         params[f"st_id_{i}"] = st_id
 
-    # Optional keyword matching for ranking within subtopics
+    # Extract keywords for ranking
     tokens = [t.strip().lower() for t in query.split() if len(t.strip()) >= 3]
 
     if tokens:
-        # Build keyword conditions for ranking
-        keyword_conditions = []
-        for i, tok in enumerate(tokens[:5]):
-            keyword_conditions.append(f"LOWER(c.chunk_text) LIKE :t{i}")
+        # Build keyword match scoring - count how many keywords match
+        # Each matching keyword adds 1 to the score
+        keyword_scores = []
+        for i, tok in enumerate(tokens[:8]):  # Use up to 8 keywords
+            keyword_scores.append(
+                f"CASE WHEN LOWER(c.chunk_text) LIKE :t{i} THEN 1 ELSE 0 END")
             params[f"t{i}"] = f"%{tok}%"
 
-        keyword_clause = " OR ".join(keyword_conditions)
+        # Sum all keyword matches for a relevance score
+        keyword_score_sql = " + ".join(keyword_scores)
 
-        # Retrieve chunks matching subtopics, prioritizing keyword matches
+        # Retrieve chunks with ranking:
+        # 1. keyword_score DESC (more keyword matches = better)
+        # 2. chunk_index ASC (earlier chunks often more relevant - intros, summaries)
         sql = f"""
         SELECT
             c.chunk_text AS chunk_text,
@@ -295,16 +308,16 @@ def retrieve_chunks_by_subtopics(query: str,
             d.file_name AS file_name,
             d.doc_key AS doc_key,
             st.label_en AS subtopic_label,
-            CASE WHEN ({keyword_clause}) THEN 1 ELSE 0 END AS keyword_match
+            ({keyword_score_sql}) AS keyword_score
         FROM rag_chunks c
         JOIN rag_documents d ON d.id = c.document_id
         LEFT JOIN subtopics st ON st.id = c.subtopic_id
         WHERE c.subtopic_id IN ({subtopic_placeholders})
-        ORDER BY keyword_match DESC
+        ORDER BY keyword_score DESC, c.chunk_index ASC
         LIMIT :k
         """
     else:
-        # No keywords - just retrieve by subtopic
+        # No keywords - prefer earlier chunks (often contain summaries)
         sql = f"""
         SELECT
             c.chunk_text AS chunk_text,
@@ -318,6 +331,7 @@ def retrieve_chunks_by_subtopics(query: str,
         JOIN rag_documents d ON d.id = c.document_id
         LEFT JOIN subtopics st ON st.id = c.subtopic_id
         WHERE c.subtopic_id IN ({subtopic_placeholders})
+        ORDER BY c.chunk_index ASC
         LIMIT :k
         """
 
