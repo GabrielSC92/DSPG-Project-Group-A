@@ -14,7 +14,7 @@ header_col1, header_col2 = st.columns([4, 1])
 with header_col1:
     st.markdown("""
     <div class="page-header">
-        <h1>💾 Export Data</h1>
+        <h1>Export Data</h1>
         <p>Download quantitative indicators and reports in various formats</p>
     </div>
     """,

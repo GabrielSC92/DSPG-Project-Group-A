@@ -23,7 +23,7 @@ header_col1, header_col2 = st.columns([4, 1])
 with header_col1:
     st.markdown("""
     <div class="page-header">
-        <h1>📊 Data Table</h1>
+        <h1>Data Table</h1>
         <p>View and analyze quantitative indicators extracted from government reports</p>
     </div>
     """,
