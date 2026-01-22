@@ -426,10 +426,21 @@ def generate_subtopics_for_chunks(topic_labels: dict) -> None:
                 continue
 
             print(
-                f"[*] Generating sub-topics for {len(documents)} documents in '{topic_label}'..."
+                f"[*] Checking sub-topics for {len(documents)} documents in '{topic_label}'..."
             )
 
+            processed = 0
+            skipped = 0
             for doc_num, doc in enumerate(documents, 1):
+                # Check if this document's chunks already have subtopics assigned
+                existing_subtopic = session.query(RagChunk.subtopic_id).filter(
+                    RagChunk.document_id == doc.id,
+                    RagChunk.subtopic_id.isnot(None)).first()
+
+                if existing_subtopic:
+                    skipped += 1
+                    continue  # Skip - document already has subtopics assigned
+
                 print(f"    [{doc_num}/{len(documents)}] {doc.file_name}...",
                       end=" ",
                       flush=True)
@@ -460,8 +471,14 @@ def generate_subtopics_for_chunks(topic_labels: dict) -> None:
                         {RagChunk.subtopic_id: subtopic_id})
 
                 session.commit()
+                processed += 1
 
-            print(f"    ✓ {topic_label}: {len(documents)} documents tagged")
+            if skipped > 0:
+                print(
+                    f"    ✓ {topic_label}: {processed} new, {skipped} skipped (already tagged)"
+                )
+            else:
+                print(f"    ✓ {topic_label}: {processed} documents tagged")
 
         # Update subtopic counts
         update_subtopic_counts()
