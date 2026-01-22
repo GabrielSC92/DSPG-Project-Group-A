@@ -536,9 +536,13 @@ def main():
         export = st.Page("views/researcher/export.py",
                          title="Export",
                          icon=":material/save:")
+        feedback = st.Page("views/researcher/feedback.py",
+                           title="Feedback",
+                           icon=":material/feedback:")
 
-        nav = st.navigation({"Analysis": [data_table, visualizations, export]},
-                            expanded=True)
+        nav = st.navigation(
+            {"Analysis": [data_table, visualizations, export, feedback]},
+            expanded=True)
         nav.run()
 
     else:
