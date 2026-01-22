@@ -9,10 +9,9 @@ and LIKERT scale submissions.
 
 import streamlit as st
 from utils.auth import get_current_user, update_interaction_count, get_user_id, is_using_database
-from utils.llm import (init_gemini, send_message, clear_chat_session,
+from utils.llm import (init_llm, send_message, clear_chat_session,
                        is_api_configured, is_llm_configured,
-                       is_agent_configured, run_synthesis_and_store,
-                       get_backend_info)
+                       is_agent_configured, run_synthesis_and_store)
 
 # Try to import database functions
 try:
@@ -43,7 +42,7 @@ def render_api_status() -> bool:
 
     # Both APIs configured
     if agent_ok and llm_ok:
-        success, _ = init_gemini()
+        success, _ = init_llm()
         if success:
             st.markdown("""
             <div style="text-align: center; margin-bottom: 1rem; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
@@ -118,29 +117,15 @@ def render_api_status() -> bool:
         f'<div style="text-align: center; margin-bottom: 1rem; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">{badges_html}</div>',
         unsafe_allow_html=True)
 
-    backend_info = get_backend_info()
-    if "Ollama" in backend_info['backend']:
-        st.warning(":material/warning: Ollama is not running")
-        st.code("""# Start Ollama server:
+    # Show Ollama setup instructions
+    st.warning(":material/warning: Ollama is not running")
+    st.code("""# Start Ollama server:
 ollama serve
 
 # In another terminal, pull a model:
 ollama pull llama3.2""",
-                language="bash")
-        st.info("Make sure Ollama is installed: https://ollama.ai/download")
-    else:
-        st.warning(
-            ":material/warning: Please add your Gemini API keys to the `.env` file"
-        )
-        st.code("""GEMINI_API_KEY_LLM=your_llm_api_key_here
-GEMINI_API_KEY_AGENT=your_agent_api_key_here
-
-# Or use Ollama (local, no rate limits):
-LLM_BACKEND=ollama
-OLLAMA_MODEL=llama3.2""",
-                language="bash")
-        st.info(
-            "Get Gemini API keys at: https://makersuite.google.com/app/apikey")
+            language="bash")
+    st.info("Make sure Ollama is installed: https://ollama.ai/download")
     return False
 
 

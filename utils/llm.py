@@ -1,20 +1,11 @@
 """
 LLM utilities for the Quality of Dutch Government application.
 
-Supports multiple backends:
-- Gemini (cloud): Free tier with rate limits
-- Ollama (local): No rate limits, runs locally
+Uses Ollama for local LLM inference - no rate limits, runs locally.
 
 Configure via .env:
-    LLM_BACKEND=ollama|gemini  (default: gemini)
-    
-For Ollama:
     OLLAMA_MODEL=llama3.2
     OLLAMA_BASE_URL=http://localhost:11434
-    
-For Gemini:
-    GEMINI_API_KEY_LLM=your_key
-    GEMINI_API_KEY_AGENT=your_key
 """
 
 import streamlit as st
@@ -33,16 +24,9 @@ load_dotenv()
 # CONFIGURATION
 # =============================================================================
 
-LLM_BACKEND = os.getenv("LLM_BACKEND",
-                        "gemini").lower()  # "gemini" or "ollama"
-
 # Ollama settings
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
-# Gemini settings
-GEMINI_API_KEY_LLM = os.getenv("GEMINI_API_KEY_LLM")
-GEMINI_API_KEY_AGENT = os.getenv("GEMINI_API_KEY_AGENT")
 
 # =============================================================================
 # SYSTEM PROMPTS
@@ -168,66 +152,7 @@ def _ollama_chat(messages: List[Dict], system: str = "") -> Tuple[bool, str]:
 
 
 # =============================================================================
-# GEMINI BACKEND
-# =============================================================================
-
-
-def _gemini_available() -> bool:
-    """Check if Gemini API keys are configured."""
-    return bool(GEMINI_API_KEY_LLM
-                and GEMINI_API_KEY_LLM != "your_api_key_here")
-
-
-def _gemini_generate(prompt: str,
-                     system: str = "",
-                     use_agent_key: bool = False) -> Tuple[bool, str]:
-    """Generate response using Gemini."""
-    try:
-        import google.generativeai as genai
-
-        api_key = GEMINI_API_KEY_AGENT if use_agent_key else GEMINI_API_KEY_LLM
-        if not api_key:
-            return False, "Gemini API key not configured"
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-
-        full_prompt = f"{system}\n\n{prompt}" if system else prompt
-        response = model.generate_content(full_prompt)
-
-        return True, response.text
-
-    except Exception as e:
-        return False, f"Gemini error: {str(e)}"
-
-
-def _gemini_chat(prompt: str, system: str = "") -> Tuple[bool, str]:
-    """Chat using Gemini with session state."""
-    try:
-        import google.generativeai as genai
-
-        if not GEMINI_API_KEY_LLM:
-            return False, "Gemini API key not configured"
-
-        genai.configure(api_key=GEMINI_API_KEY_LLM)
-
-        if 'gemini_model' not in st.session_state:
-            st.session_state.gemini_model = genai.GenerativeModel(
-                'gemini-2.0-flash', system_instruction=system)
-
-        if 'gemini_chat' not in st.session_state:
-            st.session_state.gemini_chat = st.session_state.gemini_model.start_chat(
-                history=[])
-
-        response = st.session_state.gemini_chat.send_message(prompt)
-        return True, response.text
-
-    except Exception as e:
-        return False, f"Gemini error: {str(e)}"
-
-
-# =============================================================================
-# UNIFIED API (switches based on backend)
+# UNIFIED API
 # =============================================================================
 
 
@@ -237,7 +162,6 @@ def _call_agent(prompt: str,
     """
     Call agent to validate query and extract search terms.
     Uses sub-topics for efficient filtering (much smaller context than full summaries).
-    Uses configured backend (Ollama or Gemini).
     
     Args:
         prompt: User query
@@ -270,11 +194,8 @@ def _call_agent(prompt: str,
 
 User query: {prompt}"""
 
-    if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(
-            agent_prompt, timeout=120)  # Shorter timeout - less context
-    else:
-        success, response = _gemini_generate(agent_prompt, use_agent_key=True)
+    success, response = _ollama_generate(
+        agent_prompt, timeout=120)  # Shorter timeout - less context
 
     if not success:
         return default
@@ -300,7 +221,7 @@ User query: {prompt}"""
 def _call_llm(prompt: str, context: str) -> Tuple[bool, str]:
     """
     Call LLM to generate response.
-    Uses configured backend with chat history support.
+    Uses Ollama with chat history support.
     """
     full_prompt = f"""CONTEXT:
 {context if context else "No relevant documents found."}
@@ -310,35 +231,32 @@ USER QUESTION:
 
 Answer based on the context above. Cite sources as [SOURCE 1], [SOURCE 2], etc."""
 
-    if LLM_BACKEND == "ollama":
-        # For Ollama, use chat endpoint with history
-        if 'ollama_history' not in st.session_state:
-            st.session_state.ollama_history = []
+    # Use chat endpoint with history
+    if 'ollama_history' not in st.session_state:
+        st.session_state.ollama_history = []
 
-        # Add user message
+    # Add user message
+    st.session_state.ollama_history.append({
+        "role": "user",
+        "content": full_prompt
+    })
+
+    success, response = _ollama_chat(st.session_state.ollama_history,
+                                     system=LLM_SYSTEM_PROMPT)
+
+    if success:
+        # Add assistant response to history
         st.session_state.ollama_history.append({
-            "role": "user",
-            "content": full_prompt
+            "role": "assistant",
+            "content": response
         })
 
-        success, response = _ollama_chat(st.session_state.ollama_history,
-                                         system=LLM_SYSTEM_PROMPT)
-
-        if success:
-            # Add assistant response to history
-            st.session_state.ollama_history.append({
-                "role": "assistant",
-                "content": response
-            })
-
-        return success, response
-    else:
-        return _gemini_chat(full_prompt, system=LLM_SYSTEM_PROMPT)
+    return success, response
 
 
 def summarize_text(text: str, max_length: int = 300) -> Tuple[bool, str]:
     """
-    Generate a summary of the given text using the configured LLM backend.
+    Generate a summary of the given text using Ollama.
     
     Args:
         text: The text to summarize (e.g., full PDF content)
@@ -363,10 +281,7 @@ DOCUMENT:
 
 SUMMARY:"""
 
-    if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(summary_prompt)
-    else:
-        success, response = _gemini_generate(summary_prompt)
+    success, response = _ollama_generate(summary_prompt)
 
     if success:
         # Clean up response
@@ -425,10 +340,7 @@ Example labels: "Defence", "Finance", "Education", "Foreign Affairs", "Health", 
 
 LABEL:"""
 
-    if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(prompt, timeout=60)
-    else:
-        success, response = _gemini_generate(prompt)
+    success, response = _ollama_generate(prompt, timeout=60)
 
     if success:
         # Clean up response - take first line, strip quotes and extra whitespace
@@ -475,10 +387,7 @@ Respond with ONLY the sub-topic label, nothing else.
 
 SUB-TOPIC:"""
 
-    if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(prompt, timeout=60)
-    else:
-        success, response = _gemini_generate(prompt)
+    success, response = _ollama_generate(prompt, timeout=60)
 
     if success:
         # Clean up response
@@ -531,10 +440,7 @@ Respond with ONLY the sub-topic label, nothing else.
 
 SUB-TOPIC:"""
 
-    if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(prompt, timeout=60)
-    else:
-        success, response = _gemini_generate(prompt)
+    success, response = _ollama_generate(prompt, timeout=60)
 
     if success:
         # Clean up response
@@ -593,10 +499,7 @@ Example output format:
 
 SUB-TOPICS:"""
 
-    if LLM_BACKEND == "ollama":
-        success, response = _ollama_generate(prompt, timeout=120)
-    else:
-        success, response = _gemini_generate(prompt)
+    success, response = _ollama_generate(prompt, timeout=120)
 
     labels = []
     if success:
@@ -709,64 +612,38 @@ def _topic_to_folder(topic_label: str) -> Optional[str]:
 
 
 def is_api_configured() -> bool:
-    """Check if the configured backend is available."""
-    if LLM_BACKEND == "ollama":
-        return _ollama_available()
-    else:
-        return _gemini_available() and bool(GEMINI_API_KEY_AGENT)
+    """Check if Ollama is available."""
+    return _ollama_available()
 
 
 def is_llm_configured() -> bool:
     """Check if LLM is configured."""
-    if LLM_BACKEND == "ollama":
-        return _ollama_available()
-    return _gemini_available()
+    return _ollama_available()
 
 
 def is_agent_configured() -> bool:
     """Check if Agent is configured."""
-    if LLM_BACKEND == "ollama":
-        return _ollama_available()
-    return bool(GEMINI_API_KEY_AGENT
-                and GEMINI_API_KEY_AGENT != "your_api_key_here")
+    return _ollama_available()
 
 
-def init_gemini() -> Tuple[bool, Optional[str]]:
-    """Initialize the LLM backend."""
-    if LLM_BACKEND == "ollama":
-        if _ollama_available():
-            return True, None
-        return False, f"Ollama not running at {OLLAMA_BASE_URL}. Run: ollama serve"
-    else:
-        if not _gemini_available():
-            return False, "GEMINI_API_KEY_LLM not configured"
-        if not GEMINI_API_KEY_AGENT:
-            return False, "GEMINI_API_KEY_AGENT not configured"
+def init_llm() -> Tuple[bool, Optional[str]]:
+    """Initialize the LLM backend (Ollama)."""
+    if _ollama_available():
         return True, None
+    return False, f"Ollama not running at {OLLAMA_BASE_URL}. Run: ollama serve"
 
 
 def get_backend_info() -> Dict[str, str]:
     """Get info about the current backend."""
-    if LLM_BACKEND == "ollama":
-        return {
-            "backend":
-            "Ollama (Local)",
-            "model":
-            OLLAMA_MODEL,
-            "status":
-            ":material/check_circle: Running"
-            if _ollama_available() else ":material/cancel: Not running"
-        }
-    else:
-        return {
-            "backend":
-            "Gemini (Cloud)",
-            "model":
-            "gemini-2.0-flash",
-            "status":
-            ":material/check_circle: Configured"
-            if _gemini_available() else ":material/cancel: Not configured"
-        }
+    return {
+        "backend":
+        "Ollama (Local)",
+        "model":
+        OLLAMA_MODEL,
+        "status":
+        ":material/check_circle: Running"
+        if _ollama_available() else ":material/cancel: Not running"
+    }
 
 
 def send_message(
@@ -775,7 +652,7 @@ def send_message(
         subtopic: Optional[str] = None
 ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
-    Main pipeline - works with both Ollama and Gemini.
+    Main pipeline - uses Ollama for local LLM inference.
     
     Retrieval hierarchy (drill-down):
     1. User selected specific subtopic → retrieve from that subtopic directly
@@ -877,7 +754,7 @@ def send_message(
         response += "\n\n**Sources:**\n" + format_sources_list(chunks)
 
     metadata = {
-        "backend": LLM_BACKEND,
+        "backend": "ollama",
         "topic": topic,
         "search_terms": search_terms,
         "num_chunks": len(chunks),
@@ -993,23 +870,14 @@ def _compute_correlation(prompt: str, response: str) -> float:
 
 
 def clear_chat_session():
-    """Clear chat session for both backends."""
-    keys_to_clear = ['gemini_model', 'gemini_chat', 'ollama_history']
-    for key in keys_to_clear:
-        if key in st.session_state:
-            del st.session_state[key]
+    """Clear chat session."""
+    if 'ollama_history' in st.session_state:
+        del st.session_state['ollama_history']
 
 
 def get_chat_session():
     """Get current chat session."""
-    if LLM_BACKEND == "ollama":
-        return st.session_state.get('ollama_history', [])
-    return st.session_state.get('gemini_chat')
-
-
-def get_gemini_model():
-    """Backward compatibility."""
-    return st.session_state.get('gemini_model')
+    return st.session_state.get('ollama_history', [])
 
 
 # Alias
