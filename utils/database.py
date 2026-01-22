@@ -214,6 +214,26 @@ if SQLALCHEMY_AVAILABLE:
                             server_default=func.now(),
                             nullable=False)
 
+    class Feedback(Base):
+        """
+        Stores user feedback submitted through the feedback modal.
+        """
+        __tablename__ = "feedback"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        
+        # User info (can be "anonymous" if user opts out)
+        user_id = Column(String(10), nullable=True)
+        user_email = Column(String(40), nullable=True)
+        
+        # Feedback details
+        feedback_type = Column(String(30), nullable=False)  # General Feedback, Bug Report, etc.
+        message = Column(Text, nullable=False)
+        
+        created_at = Column(DateTime(timezone=True),
+                            server_default=func.now(),
+                            nullable=False)
+
 
 _engine = None
 _SessionLocal = None
@@ -1063,3 +1083,85 @@ def update_chunk_subtopic(session, chunk_id: int, subtopic_id: int) -> bool:
     except Exception as e:
         print(f"DATABASE: Error updating chunk subtopic: {e}")
         return False
+
+
+# ============== FEEDBACK TABLE OPERATIONS ==============
+
+
+def save_feedback(
+        feedback_type: str,
+        message: str,
+        user_id: Optional[str] = None,
+        user_email: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Save user feedback to the database.
+    
+    Args:
+        feedback_type: Type of feedback (General Feedback, Bug Report, etc.)
+        message: The feedback message content
+        user_id: User ID or None/anonymous
+        user_email: User email or None/anonymous
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    session = get_session()
+    if session is None:
+        return False, "Database not connected"
+
+    try:
+        # Handle anonymous values
+        uid = user_id if user_id and user_id != "anonymous" else None
+        email = user_email if user_email and user_email != "anonymous" else None
+        
+        new_feedback = Feedback(
+            user_id=uid,
+            user_email=email,
+            feedback_type=feedback_type[:30],
+            message=message[:5000]  # Limit message length
+        )
+        session.add(new_feedback)
+        session.commit()
+        return True, "Feedback saved successfully"
+    except Exception as e:
+        session.rollback()
+        return False, f"Failed to save feedback: {e}"
+    finally:
+        session.close()
+
+
+def get_all_feedback(limit: int = 100) -> List[Dict[str, Any]]:
+    """
+    Get all feedback entries from the database.
+    
+    Args:
+        limit: Maximum number of records to return
+        
+    Returns:
+        List of feedback dicts
+    """
+    session = get_session()
+    if session is None:
+        return []
+
+    try:
+        feedbacks = session.query(Feedback).order_by(
+            Feedback.created_at.desc()
+        ).limit(limit).all()
+        
+        return [
+            {
+                'id': f.id,
+                'user_id': f.user_id,
+                'user_email': f.user_email,
+                'feedback_type': f.feedback_type,
+                'message': f.message,
+                'created_at': f.created_at
+            }
+            for f in feedbacks
+        ]
+    except Exception as e:
+        print(f"DATABASE: Error getting feedback: {e}")
+        return []
+    finally:
+        session.close()

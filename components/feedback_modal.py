@@ -6,12 +6,13 @@ Provides a feedback pop-up modal for users to send feedback to developers.
 import streamlit as st
 from datetime import datetime
 from utils.auth import get_current_user, get_user_id
+from utils.database import save_feedback
 
 
 def render_feedback_modal() -> None:
     """Render the feedback modal dialog."""
 
-    @st.dialog(":material/forum: Send Feedback to Developers", width="large")
+    @st.dialog("Send Feedback to Developers", width="large")
     def feedback_dialog():
         user = get_current_user()
 
@@ -59,16 +60,6 @@ def render_feedback_modal() -> None:
         char_count = len(feedback_text) if feedback_text else 0
         st.caption(f"{char_count}/2000 characters")
 
-        # Priority (for bug reports)
-        if feedback_type == "Bug Report":
-            priority = st.select_slider(
-                "Priority Level",
-                options=["Low", "Medium", "High", "Critical"],
-                value="Medium",
-                key="feedback_priority")
-        else:
-            priority = "N/A"
-
         # Allow anonymous
         include_user_info = st.checkbox(
             "Include my user information (helps with follow-up)",
@@ -93,34 +84,25 @@ def render_feedback_modal() -> None:
                          use_container_width=True,
                          key="submit_feedback"):
                 if feedback_text and len(feedback_text.strip()) >= 10:
-                    # Prepare feedback data
-                    feedback_data = {
-                        "timestamp":
-                        datetime.now().isoformat(),
-                        "type":
-                        feedback_type,
-                        "message":
-                        feedback_text,
-                        "priority":
-                        priority,
-                        "user_id":
-                        get_user_id() if include_user_info else "anonymous",
-                        "user_email":
-                        user.get("email")
-                        if include_user_info and user else "anonymous"
-                    }
+                    # Save feedback to database
+                    success, msg = save_feedback(
+                        feedback_type=feedback_type,
+                        message=feedback_text,
+                        user_id=get_user_id() if include_user_info else None,
+                        user_email=user.get("email")
+                        if include_user_info and user else None)
 
-                    # In production, this would send to backend
-                    # For now, we'll just show success and log
-                    print(f"FEEDBACK SUBMITTED: {feedback_data}")
-
-                    st.success(
-                        ":material/check_circle: Thank you! Your feedback has been submitted successfully."
-                    )
-
-                    # Close modal after brief delay
-                    st.session_state.show_feedback_modal = False
-                    st.rerun()
+                    if success:
+                        st.success(
+                            ":material/check_circle: Thank you! Your feedback has been submitted successfully."
+                        )
+                        # Close modal after brief delay
+                        st.session_state.show_feedback_modal = False
+                        st.rerun()
+                    else:
+                        st.error(
+                            f":material/warning: Failed to submit feedback: {msg}"
+                        )
 
                 else:
                     st.error(
