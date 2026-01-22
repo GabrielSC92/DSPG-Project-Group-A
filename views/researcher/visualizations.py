@@ -13,14 +13,6 @@ import numpy as np
 
 # Page configuration with logo
 header_col1, header_col2 = st.columns([4, 1])
-with header_col1:
-    st.markdown("""
-    <div class="page-header">
-        <h1>Visualizations</h1>
-        <p>Interactive charts and analytics for government quality indicators</p>
-    </div>
-    """,
-                unsafe_allow_html=True)
 with header_col2:
     st.image("Utrecht_University_logo_square.png", width=80)
 

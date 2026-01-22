@@ -181,6 +181,17 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
+    /* Reduce vertical spacing for login page logo */
+    .block-container {
+        padding-top: 1rem !important;
+    }
+    [data-testid="stImage"] {
+        margin-bottom: -1rem !important;
+    }
+    div[data-testid="stVerticalBlock"] {
+        gap: 0.5rem !important;
+    }
+    
     /* Page header */
     .page-header {
         padding: 1rem 0 2rem 0;

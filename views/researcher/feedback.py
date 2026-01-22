@@ -16,14 +16,6 @@ except ImportError:
 
 # Page header
 header_col1, header_col2 = st.columns([4, 1])
-with header_col1:
-    st.markdown("""
-    <div class="page-header">
-        <h1>User Feedback</h1>
-        <p>Review feedback submitted by users to improve the platform</p>
-    </div>
-    """,
-                unsafe_allow_html=True)
 with header_col2:
     st.image("Utrecht_University_logo_square.png", width=80)
 
@@ -63,20 +55,20 @@ if df is None or len(df) == 0:
 else:
     # Summary metrics
     st.markdown("### Overview")
-    
+
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         st.metric("Total Feedback", len(df))
-    
+
     with col2:
         bug_count = len(df[df['Type'] == 'Bug Report'])
         st.metric("Bug Reports", bug_count)
-    
+
     with col3:
         feature_count = len(df[df['Type'] == 'Feature Request'])
         st.metric("Feature Requests", feature_count)
-    
+
     with col4:
         # Count feedback with user info (non-anonymous)
         identified = len(df[df['User Email'].notna()])
@@ -91,18 +83,18 @@ else:
     with filter_col1:
         # Filter by type
         all_types = ['All'] + sorted(df['Type'].unique().tolist())
-        selected_type = st.selectbox("Feedback Type", options=all_types, key="fb_type_filter")
+        selected_type = st.selectbox("Feedback Type",
+                                     options=all_types,
+                                     key="fb_type_filter")
 
     with filter_col2:
         # Filter by date range
         if 'Submitted At' in df.columns and df['Submitted At'].notna().any():
             min_date = pd.to_datetime(df['Submitted At']).min().date()
             max_date = pd.to_datetime(df['Submitted At']).max().date()
-            date_range = st.date_input(
-                "Date Range",
-                value=(min_date, max_date),
-                key="fb_date_filter"
-            )
+            date_range = st.date_input("Date Range",
+                                       value=(min_date, max_date),
+                                       key="fb_date_filter")
         else:
             date_range = None
 
@@ -113,11 +105,11 @@ else:
         filtered_df = filtered_df[filtered_df['Type'] == selected_type]
 
     if date_range and len(date_range) == 2:
-        filtered_df['Submitted At'] = pd.to_datetime(filtered_df['Submitted At'])
+        filtered_df['Submitted At'] = pd.to_datetime(
+            filtered_df['Submitted At'])
         filtered_df = filtered_df[
-            (filtered_df['Submitted At'].dt.date >= date_range[0]) &
-            (filtered_df['Submitted At'].dt.date <= date_range[1])
-        ]
+            (filtered_df['Submitted At'].dt.date >= date_range[0])
+            & (filtered_df['Submitted At'].dt.date <= date_range[1])]
 
     st.markdown("---")
 
@@ -143,7 +135,8 @@ else:
                 timestamp_str = "Unknown"
 
             # User info
-            user_info = row['User Email'] if pd.notna(row['User Email']) else "Anonymous"
+            user_info = row['User Email'] if pd.notna(
+                row['User Email']) else "Anonymous"
 
             # Type badge color
             type_colors = {
@@ -156,17 +149,21 @@ else:
             }
             type_icon = type_colors.get(row['Type'], '⚪')
 
-            with st.expander(f"{type_icon} **{row['Type']}** - {timestamp_str} ({user_info})"):
+            with st.expander(
+                    f"{type_icon} **{row['Type']}** - {timestamp_str} ({user_info})"
+            ):
                 st.markdown(f"**Message:**")
                 st.markdown(f"> {row['Message']}")
-                
+
                 st.markdown("---")
-                
+
                 detail_col1, detail_col2, detail_col3 = st.columns(3)
                 with detail_col1:
                     st.caption(f"**ID:** {row['ID']}")
                 with detail_col2:
-                    st.caption(f"**User ID:** {row['User ID'] if pd.notna(row['User ID']) else 'N/A'}")
+                    st.caption(
+                        f"**User ID:** {row['User ID'] if pd.notna(row['User ID']) else 'N/A'}"
+                    )
                 with detail_col3:
                     st.caption(f"**Submitted:** {timestamp_str}")
 
@@ -174,10 +171,12 @@ else:
         st.markdown("---")
         if st.checkbox("Show as table", key="fb_show_table"):
             # Select columns for table view
-            display_cols = ['ID', 'Type', 'Message', 'User Email', 'Submitted At']
-            available_cols = [c for c in display_cols if c in filtered_df.columns]
-            st.dataframe(
-                filtered_df[available_cols],
-                use_container_width=True,
-                hide_index=True
-            )
+            display_cols = [
+                'ID', 'Type', 'Message', 'User Email', 'Submitted At'
+            ]
+            available_cols = [
+                c for c in display_cols if c in filtered_df.columns
+            ]
+            st.dataframe(filtered_df[available_cols],
+                         use_container_width=True,
+                         hide_index=True)
