@@ -336,7 +336,20 @@ def generate_topics_from_documents(root: Path, session=None) -> None:
         topic_labels = {
         }  # Store folder -> label mapping for subtopic generation
 
+        topics_generated = 0
+        topics_skipped = 0
+
         for source_folder, doc_count in folder_counts:
+            # Check if topic already exists in database
+            existing_topic = session.query(Topic).filter(
+                Topic.source_folder == source_folder.lower()).one_or_none()
+
+            if existing_topic and existing_topic.label_en:
+                # Use existing label, skip LLM generation
+                topic_labels[source_folder] = existing_topic.label_en
+                topics_skipped += 1
+                continue
+
             # Get sample chunks from this folder for context
             sample_chunks = session.query(RagChunk.chunk_text).join(
                 RagDocument, RagChunk.document_id == RagDocument.id).filter(
@@ -367,9 +380,18 @@ def generate_topics_from_documents(root: Path, session=None) -> None:
                 upsert_topic(source_folder, fallback_label, doc_count)
                 topic_labels[source_folder] = fallback_label
 
+            topics_generated += 1
+
         # Update document counts for all topics
         update_topic_counts()
-        print(f"[OK] Topics generated and saved to database")
+        if topics_skipped > 0:
+            print(
+                f"[OK] Topics: {topics_generated} new, {topics_skipped} skipped (already labeled)"
+            )
+        else:
+            print(
+                f"[OK] Topics: {topics_generated} generated and saved to database"
+            )
 
         # Close this session before generating subtopics
         session.close()
