@@ -31,12 +31,6 @@ with header_col1:
 with header_col2:
     st.image("Utrecht_University_logo_square.png", width=80)
 
-# Privacy note
-st.info(
-    ":material/warning: **Privacy Notice**: Raw chat content is never stored. Only synthesized summaries and metrics are available for analysis.",
-    icon=":material/lock:")
-
-
 def calculate_user_normalized_satisfaction(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculate user-normalized satisfaction scores per Topic.
@@ -194,14 +188,66 @@ def get_data():
 # Load data
 df, using_db = get_data()
 
-# Show data source indicator
-if using_db:
-    st.success(f":material/bar_chart: Showing {len(df)} records from database",
-               icon=":material/check_circle:")
-else:
-    st.warning(
-        ":material/bar_chart: Showing demo data (database empty or not connected)",
-        icon=":material/warning:")
+# Show DB status indicator in sidebar (small badge style)
+with st.sidebar:
+    if using_db:
+        st.markdown("""
+        <div style="display: flex; justify-content: center; margin: 0.5rem 0;">
+            <span style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.75rem;
+                font-family: 'Space Mono', monospace;
+                background: rgba(34, 197, 94, 0.15);
+                border: 1px solid rgba(34, 197, 94, 0.3);
+                color: #4ade80;
+            ">
+                <span style="
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: #4ade80;
+                    box-shadow: 0 0 8px #4ade80;
+                    animation: pulse 2s infinite;
+                "></span>
+                DB Connected
+            </span>
+        </div>
+        <style>
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="display: flex; justify-content: center; margin: 0.5rem 0;">
+            <span style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.75rem;
+                font-family: 'Space Mono', monospace;
+                background: rgba(239, 68, 68, 0.15);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                color: #f87171;
+            ">
+                <span style="
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: #f87171;
+                "></span>
+                DB Demo
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
 
 # --- FILTERS ---
 st.markdown("### :material/filter_list: Filters")
