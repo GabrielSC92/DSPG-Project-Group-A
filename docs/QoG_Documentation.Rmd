@@ -1,0 +1,866 @@
+---
+title: "Quality of Dutch Government"
+subtitle: "Technical Documentation & User Guide"
+author: |
+  | DSPG Project Group A
+  | Institute for Government Quality Research
+  | Utrecht University
+date: "`r format(Sys.Date(), '%B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_caption: true
+    latex_engine: xelatex
+    keep_tex: false
+header-includes:
+  - \usepackage{fancyhdr}
+  - \usepackage{graphicx}
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \usepackage{xcolor}
+  - \usepackage{hyperref}
+  - \usepackage{float}
+  - \definecolor{uuyellow}{HTML}{FFCD00}
+  - \definecolor{dutchblue}{HTML}{1E3A8A}
+  - \pagestyle{fancy}
+  - \fancyhead[L]{\small Quality of Dutch Government}
+  - \fancyhead[R]{\small Utrecht University}
+  - \fancyfoot[C]{\thepage}
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+\newpage
+
+# Executive Summary
+
+The **Quality of Dutch Government** application is a web-based research tool developed by Utrecht University's Institute for Government Quality Research. The system translates qualitative Dutch government audit reports into quantitative performance indicators using AI/LLM technology, while enabling citizen feedback collection for academic research purposes.
+
+## Key Features
+
+- **AI-Powered Chat Interface**: Natural language Q&A about Dutch government performance using Retrieval-Augmented Generation (RAG)
+- **Citizen Feedback Collection**: 5-point Likert scale ratings on government performance
+- **Research Dashboard**: Interactive data tables, visualizations, and export capabilities
+- **Privacy-First Design**: No raw chat content stored; only anonymized summaries for research
+
+## Technical Highlights
+
+| Component | Technology |
+|-----------|------------|
+| Frontend | Streamlit (Python) |
+| LLM Backend | Ollama (Llama 3.2, local deployment) |
+| Database | SQLite (development) / PostgreSQL (production) |
+| Visualizations | Plotly |
+| PDF Processing | PyMuPDF, pypdf |
+
+\newpage
+
+# Introduction
+
+## Background
+
+The Quality of Dutch Government project addresses a fundamental challenge in public governance research: transforming qualitative assessments of government performance into measurable, comparable indicators. Traditional audit reports from institutions like the Dutch Court of Audit (*Algemene Rekenkamer*) contain valuable insights but are difficult to analyze quantitatively at scale.
+
+## Objectives
+
+1. **Democratize Access**: Enable citizens to query government audit reports using natural language
+2. **Quantify Feedback**: Collect structured satisfaction ratings on government performance
+3. **Support Research**: Provide researchers with tools to analyze citizen perceptions
+4. **Ensure Privacy**: Protect user privacy while gathering meaningful data
+
+## Document Structure
+
+This documentation covers:
+
+- **Section 3**: End-User Guide for citizens
+- **Section 4**: Researcher Guide for data analysis
+- **Section 5**: System Architecture technical details
+- **Section 6**: Database Schema and data model
+- **Section 7**: Installation and Setup instructions
+- **Section 8**: API Reference
+
+\newpage
+
+# End-User Guide
+
+This section guides end-users (citizens) through the application's features.
+
+## Getting Started
+
+### Launching the Application
+
+The application runs locally on your machine. To start it:
+
+1. Ensure Ollama is running (`ollama serve` in a terminal)
+2. Navigate to the project folder
+3. Run `streamlit run streamlit_app.py` or double-click `Streamlit_app.bat`
+4. Your browser will open automatically to `http://localhost:8501`
+
+### Demo Credentials
+
+For testing purposes, the following accounts are pre-configured:
+
+| Role | Email | Password |
+|------|-------|----------|
+| End-User | `user@demo.nl` | `demo123` |
+| Researcher | `researcher@demo.nl` | `demo123` |
+
+### Creating an Account
+
+New end-users can register directly:
+
+1. On the login page, click **"Sign Up"**
+2. Enter your email address and create a password
+   - Password must be at least 6 characters
+   - Must contain at least one letter and one number
+3. Acknowledge the research terms
+4. Click **"Create Account"**
+
+**Note:** Researcher accounts must be created manually by an administrator.
+
+### Logging In
+
+1. Enter your registered email address
+2. Enter your password
+3. Click **"Sign In"**
+
+## Chat Interface
+
+### Asking Questions
+
+The AI chat interface allows you to ask natural language questions about Dutch government quality and performance.
+
+**Example questions:**
+
+- "What are the main findings about submarine procurement?"
+- "How has the military budget been managed?"
+- "What does the Court of Audit say about climate policy?"
+
+### Using Topic Filters
+
+1. **Topic Dropdown**: Select a broad category (e.g., "Defence", "Climate")
+2. **Subtopic Dropdown**: Select a specific focus area (e.g., "Submarine Procurement")
+
+Selecting filters helps the system retrieve more relevant information.
+
+### Understanding Responses
+
+Each AI response includes:
+
+- **Answer**: The AI-generated response based on audit documents
+- **Source Citations**: References marked as `[SOURCE 1]`, `[SOURCE 2]`, etc.
+- **Sources List**: Collapsible section showing document names and chunk locations
+
+### Rating Government Performance
+
+After each response, you'll see a satisfaction prompt:
+
+> *"Based on the information above, how satisfied are you with the Dutch government's performance on this topic?"*
+
+**Rating Scale:**
+
+| Score | Label |
+|-------|-------|
+| 1 | Very dissatisfied |
+| 2 | Dissatisfied |
+| 3 | Neutral |
+| 4 | Satisfied |
+| 5 | Very satisfied |
+
+Click **"Submit"** to record your rating. This helps researchers understand citizen perceptions of government quality.
+
+## Privacy & Data Protection
+
+Your privacy is protected:
+
+- **Chat History**: Not saved to any database; exists only in your browser session
+- **Satisfaction Ratings**: Stored anonymously with topic summaries (not your actual questions)
+- **Personal Data**: Anonymous session IDs used; no personal identifiers stored
+- **GDPR Compliance**: Data processed in accordance with EU regulations
+
+\newpage
+
+# Researcher Guide
+
+This section guides researchers through the data analysis features.
+
+## Accessing the Researcher View
+
+Researchers have access to four main pages:
+
+1. **Data Table**: View and filter interaction records
+2. **Visualizations**: Interactive charts and graphs
+3. **Export**: Download data in various formats
+4. **Feedback**: View user feedback submissions
+
+## Data Table Page
+
+### Available Filters
+
+| Filter | Description |
+|--------|-------------|
+| Date Range | Filter by interaction date |
+| Topic | Filter by topic category |
+| User ID | Filter by specific user |
+| Status | Filter by verification status |
+| Search | Full-text search across all columns |
+
+### Understanding the Metrics
+
+**Summary Metrics Row:**
+
+| Metric | Description |
+|--------|-------------|
+| Total Records | Number of records matching filters |
+| Avg. Satisfaction (Raw) | Simple average of all ratings |
+| Avg. Satisfaction (Norm.) | User-normalized average (one vote per user-topic) |
+| Avg. Quality Score | Average Response Quality Score |
+| Verified % | Percentage of verified responses |
+| Unique Users | Number of distinct users |
+
+### User-Normalized Satisfaction
+
+To prevent individual users from skewing results, we calculate user-normalized satisfaction:
+
+**Example:**
+
+- User A queries "Defence" 5 times: scores 5, 5, 5, 4, 5 → User A's vote = 4.8
+- User B queries "Defence" 1 time: score 2 → User B's vote = 2.0
+- **Raw average**: (5+5+5+4+5+2) / 6 = **4.33** (User A dominates)
+- **Normalized average**: (4.8 + 2.0) / 2 = **3.4** (equal weighting)
+
+### Data Columns
+
+| Column | Description |
+|--------|-------------|
+| ID | Unique interaction identifier |
+| User ID | Anonymous user identifier |
+| Date | Interaction date |
+| Topic | Main topic category |
+| Subtopic | Specific subtopic/summary |
+| Satisfaction (Raw) | User's 1-5 rating |
+| User-Norm. Score | User's average for this topic |
+| User Topic Queries | How many times user queried this topic |
+| Response Quality Score | System-calculated quality measure |
+| Verified | Whether response met quality threshold |
+| Source | Data source identifier |
+
+## Visualizations Page
+
+> **Note:** The visualizations page currently displays **demo data only** and is not yet connected to the live database. This page demonstrates the intended visualization capabilities for future development. The Data Table page, in contrast, displays real data from the database when available.
+
+### Available Chart Types
+
+1. **Time Series**: Satisfaction trends over time
+2. **Pie Charts**: Topic distribution
+3. **Histograms**: Satisfaction score distribution
+4. **Box Plots**: Satisfaction by topic comparison
+5. **Heatmaps**: Topic correlation analysis
+6. **Scatter Plots**: Satisfaction vs. Quality Score
+7. **Bar Charts**: Source breakdown
+
+### Chart Controls
+
+- **Chart Type**: Select visualization type
+- **Metric**: Choose which metric to display
+- **Group By**: Aggregate by topic, source, or time period
+- **Date Range**: Filter by date
+
+## Export Page
+
+### Supported Formats
+
+| Format | Extension | Use Case |
+|--------|-----------|----------|
+| CSV | `.csv` | Universal, spreadsheet-compatible |
+| Excel | `.xlsx` | Microsoft Excel with formatting |
+| JSON | `.json` | Programmatic access, APIs |
+
+### Export Options
+
+1. Select columns to include
+2. Choose file format
+3. Click **"Download"**
+
+Files are automatically timestamped (e.g., `qog_export_2026-01-23.csv`).
+
+## Feedback Management
+
+View all user feedback organized by:
+
+- **Type**: Bug Report, Feature Request, General Feedback, Data Quality Issue, UX
+- **Date**: When feedback was submitted
+- **User**: Who submitted (if not anonymous)
+
+\newpage
+
+# System Architecture
+
+## Overview
+
+The application follows a three-tier architecture:
+
+1. **Presentation Layer**: Streamlit web application
+2. **Business Logic Layer**: RAG pipeline, LLM integration, synthesis
+3. **Data Layer**: SQLite/PostgreSQL database
+
+## Front-End Architecture
+
+### Authentication System
+
+```
+Login Page
+    ├── Email/Password Form
+    ├── Sign Up Dialog (End-Users only)
+    ├── Demo Credentials Expander
+    └── Role Check
+            ├── End-User → Chat Interface
+            └── Researcher → Data Dashboard
+```
+
+### End-User View Components
+
+| Component | Purpose |
+|-----------|---------|
+| API Status Badges | Show Agent/LLM connection status |
+| Topic/Subtopic Dropdowns | Filter query context |
+| Chat Interface | Natural language Q&A |
+| Source Citations | Document references |
+| Satisfaction Widget | 5-point Likert scale |
+| Privacy Notice | GDPR compliance information |
+
+### Researcher View Components
+
+| Page | Components | Data Source |
+|------|------------|-------------|
+| Data Table | Filters, Metrics Row, Interactive Table | Live database |
+| Visualizations | Chart Controls, Plotly Charts | Demo data* |
+| Export | Format Selection, Column Selection, Download | Live database |
+| Feedback | Type Filter, Card/Table Views | Live database |
+
+*\*Visualizations page uses demo data for demonstration purposes; database integration pending.*
+
+## Back-End Architecture
+
+### Document Ingestion Pipeline
+
+```
+PDF Documents
+    → Text Extraction (PyMuPDF/pypdf)
+    → Character-Based Chunking
+    → LLM Document Summary
+    → Topic Classification
+    → Subtopic Generation
+    → Database Storage
+```
+
+### RAG (Retrieval-Augmented Generation) System
+
+**Retrieval Hierarchy:**
+
+1. **Level 1**: User selected specific subtopic → retrieve directly
+2. **Level 2**: Agent matches subtopics from query → use matched IDs
+3. **Level 3**: Topic selected but no subtopic match → keyword search
+4. **Level 4**: No matches → show informational message
+
+### Agent System
+
+The Agent validates queries and routes to appropriate subtopics:
+
+```json
+{
+    "valid": true,
+    "reason": "",
+    "search_terms": ["submarine", "procurement"],
+    "relevant_subtopic_ids": [1, 3, 5]
+}
+```
+
+### LLM Integration
+
+| Setting | Value |
+|---------|-------|
+| Model | Llama 3.2 |
+| Backend | Ollama (local) |
+| Context Window | 16,384 tokens |
+| Temperature | 0.7 |
+
+### Synthesis Pipeline
+
+```
+User Query + LLM Response + Satisfaction Rating
+    → Create Summary (from matched subtopics)
+    → Compute Response Quality Score
+    → Verify (RQS >= 0.30?)
+    → Store in Quant Database
+```
+
+### Response Quality Score (RQS)
+
+The RQS measures response quality on a 0.0-1.0 scale:
+
+| Factor | Contribution |
+|--------|-------------|
+| Source citations | +0.05 per `[SOURCE]` (max 0.30) |
+| Response length > 500 chars | +0.15 |
+| Response length > 1000 chars | +0.10 |
+| Lexical overlap with query | +0.03 per shared word (max 0.30) |
+| "No relevant" in response | -0.20 penalty |
+
+**Verification Threshold**: RQS ≥ 0.30 → Verified (V)
+
+\newpage
+
+# Database Schema
+
+## Tables Overview
+
+| Table | Purpose |
+|-------|---------|
+| `auth` | User authentication and profiles |
+| `quant` | Interaction records with satisfaction scores |
+| `topics` | Topic categories (Defence, Climate, etc.) |
+| `subtopics` | Subtopics within each topic |
+| `rag_documents` | Ingested PDF metadata and summaries |
+| `rag_chunks` | Chunked document text for retrieval |
+| `feedback` | User feedback submissions |
+
+## Auth Table
+
+Stores user authentication data.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `user_id` | VARCHAR(10) | Primary key |
+| `email` | VARCHAR(40) | Unique email address |
+| `password_hash` | VARCHAR(128) | SHA-256 hashed password |
+| `access_level` | CHAR(1) | 'U' (User) or 'R' (Researcher) |
+| `created_date` | DATE | Account creation date |
+| `interaction_count` | INTEGER | Total interactions |
+| `satisfaction_baseline` | DECIMAL(3,1) | User's baseline satisfaction |
+
+## Quant Table
+
+Stores interaction records for research analysis.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `interaction_id` | VARCHAR(12) | Primary key |
+| `user_id` | VARCHAR(10) | Foreign key to auth |
+| `topic_id` | INTEGER | Foreign key to topics |
+| `correlation_index` | DECIMAL(5,3) | Response Quality Score |
+| `verification_flag` | CHAR(1) | 'V' (Verified) or 'U' (Unverified) |
+| `satisfaction_raw` | DECIMAL(3,1) | User's 1-5 rating |
+| `interaction_date` | DATE | Date of interaction |
+| `summary` | TEXT | Subtopic labels (not chat content) |
+
+## Topics Table
+
+Stores topic categories.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER | Primary key |
+| `source_folder` | VARCHAR(80) | Original folder name |
+| `label_en` | VARCHAR(100) | English display label |
+| `document_count` | INTEGER | Number of documents |
+| `created_at` | DATETIME | Creation timestamp |
+
+## Subtopics Table
+
+Stores subtopics within topics.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER | Primary key |
+| `topic_id` | INTEGER | Foreign key to topics |
+| `label_en` | VARCHAR(150) | English display label |
+| `chunk_count` | INTEGER | Number of chunks |
+| `created_at` | DATETIME | Creation timestamp |
+
+## RAG Documents Table
+
+Stores ingested document metadata.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER | Primary key |
+| `doc_key` | VARCHAR(255) | Unique document identifier |
+| `source_folder` | VARCHAR(80) | Topic folder |
+| `file_name` | VARCHAR(255) | Original filename |
+| `file_path` | VARCHAR(500) | Full file path |
+| `summary` | TEXT | LLM-generated summary |
+| `created_at` | DATETIME | Ingestion timestamp |
+
+## RAG Chunks Table
+
+Stores chunked document text.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER | Primary key |
+| `document_id` | INTEGER | Foreign key to rag_documents |
+| `subtopic_id` | INTEGER | Foreign key to subtopics |
+| `chunk_index` | INTEGER | Position in document |
+| `page_start` | INTEGER | Starting page |
+| `page_end` | INTEGER | Ending page |
+| `chunk_text` | TEXT | Chunk content |
+| `created_at` | DATETIME | Creation timestamp |
+
+## Feedback Table
+
+Stores user feedback submissions.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER | Primary key |
+| `user_id` | VARCHAR(10) | Optional user ID |
+| `user_email` | VARCHAR(40) | Optional email |
+| `feedback_type` | VARCHAR(30) | Type category |
+| `message` | TEXT | Feedback content |
+| `created_at` | DATETIME | Submission timestamp |
+
+\newpage
+
+# Installation & Setup
+
+## Prerequisites
+
+- Python 3.10 or higher
+- Ollama installed and running
+- Git (for version control)
+
+## Installation Steps
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd DSPG-Project-Group-A
+```
+
+### 2. Create Virtual Environment
+
+```bash
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Set Up Ollama
+
+```bash
+# Install Ollama from https://ollama.ai/download
+
+# Start Ollama server
+ollama serve
+
+# In another terminal, pull the model
+ollama pull llama3.2
+```
+
+### 5. Initialize Database
+
+```bash
+python scripts/init_db.py
+```
+
+### 6. Ingest Documents (Optional)
+
+```bash
+python scripts/ingest_audits.py
+```
+
+### 7. Run the Application
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Or use the batch file (Windows):
+
+```bash
+Streamlit_app.bat
+```
+
+## Environment Variables
+
+Create a `.env` file in the project root:
+
+```bash
+# Database Configuration
+DB_TYPE=sqlite
+DB_PATH=data/qog_local.db
+
+# For PostgreSQL:
+# DB_TYPE=postgresql
+# DB_HOST=localhost
+# DB_PORT=5432
+# DB_NAME=qog_dev
+# DB_USER=postgres
+# DB_PASSWORD=your_password
+
+# Ollama Configuration
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+## Directory Structure
+
+```
+DSPG-Project-Group-A/
+├── streamlit_app.py          # Main application entry
+├── requirements.txt          # Python dependencies
+├── .env                      # Environment variables
+│
+├── components/               # Reusable UI components
+│   ├── feedback_modal.py
+│   └── single_metric_card.py
+│
+├── views/                    # Page views
+│   ├── end_user.py           # Chat interface
+│   └── researcher/           # Researcher dashboard
+│       ├── data_table.py
+│       ├── visualizations.py
+│       ├── export.py
+│       └── feedback.py
+│
+├── utils/                    # Backend utilities
+│   ├── auth.py               # Authentication
+│   ├── database.py           # Database operations
+│   ├── llm.py                # LLM integration
+│   └── rag.py                # RAG retrieval
+│
+├── scripts/                  # Setup scripts
+│   ├── init_db.py            # Database initialization
+│   └── ingest_audits.py      # Document ingestion
+│
+├── data/                     # Data storage
+│   ├── qog_local.db          # SQLite database
+│   └── raw/                  # Source PDF documents
+│       ├── climate/
+│       └── defensie/
+│
+└── docs/                     # Documentation
+    ├── architecture.md
+    └── feature_list.md
+```
+
+\newpage
+
+# API Reference
+
+## Authentication Functions
+
+### `login_user(email, password)`
+
+Authenticate a user.
+
+**Parameters:**
+
+- `email` (str): User's email address
+- `password` (str): User's password
+
+**Returns:** `Tuple[bool, str]` - (success, message)
+
+### `create_user(user_id, email, access_level, password)`
+
+Create a new user account.
+
+**Parameters:**
+
+- `user_id` (str): Unique user identifier
+- `email` (str): Email address
+- `access_level` (str): 'U' or 'R'
+- `password` (str): Plain text password
+
+**Returns:** `Tuple[bool, str]` - (success, message)
+
+## LLM Functions
+
+### `send_message(prompt, topic, subtopic)`
+
+Send a query through the RAG pipeline.
+
+**Parameters:**
+
+- `prompt` (str): User's question
+- `topic` (str, optional): Selected topic label
+- `subtopic` (str, optional): Selected subtopic label
+
+**Returns:** `Tuple[bool, str, Dict]` - (success, response, metadata)
+
+### `synthesize_and_store(user_prompt, llm_response, satisfaction, user_id, topic, matched_subtopics)`
+
+Store interaction data after synthesis.
+
+**Parameters:**
+
+- `user_prompt` (str): User's original question
+- `llm_response` (str): LLM's response
+- `satisfaction` (float): 1-5 rating
+- `user_id` (str): User identifier
+- `topic` (str, optional): Topic label
+- `matched_subtopics` (list, optional): Matched subtopic labels
+
+**Returns:** `Tuple[bool, str]` - (success, interaction_id or error)
+
+## Database Functions
+
+### `get_all_interactions(user_id, start_date, end_date, limit)`
+
+Retrieve interaction records.
+
+**Parameters:**
+
+- `user_id` (str, optional): Filter by user
+- `start_date` (date, optional): Start date filter
+- `end_date` (date, optional): End date filter
+- `limit` (int): Maximum records (default 1000)
+
+**Returns:** `List[Dict]` - List of interaction records
+
+### `save_feedback(feedback_type, message, user_id, user_email)`
+
+Save user feedback.
+
+**Parameters:**
+
+- `feedback_type` (str): Type of feedback
+- `message` (str): Feedback content
+- `user_id` (str, optional): User identifier
+- `user_email` (str, optional): User email
+
+**Returns:** `Tuple[bool, str]` - (success, message)
+
+## RAG Functions
+
+### `retrieve_chunks_by_subtopics(query, subtopic_ids, k)`
+
+Retrieve chunks filtered by subtopics.
+
+**Parameters:**
+
+- `query` (str): Search query
+- `subtopic_ids` (list): List of subtopic IDs
+- `k` (int): Number of chunks (default 12, max 15)
+
+**Returns:** `List[Dict]` - List of chunk dictionaries
+
+\newpage
+
+# Appendix A: Data Sources
+
+## Currently Ingested Documents
+
+### Defence Reports (24 documents)
+
+- Submarine procurement reviews
+- Military budget audits
+- Cybersecurity assessments
+- NAFIN network evaluations
+- Personnel and training reports
+
+### Climate Reports (11 documents)
+
+- Energy transition plans
+- Citizen council advice
+- Policy impact analyses
+- Climate monitoring reports
+
+## Supported Audit Sources
+
+| Source | Dutch Name | Type |
+|--------|------------|------|
+| Court of Audit | Algemene Rekenkamer | External audit |
+| Government Internal Audit | Auditdienst Rijk | Internal audit |
+| Policy Evaluation | IOB | Policy evaluation |
+
+\newpage
+
+# Appendix B: Troubleshooting
+
+## Common Issues
+
+### "Ollama not running"
+
+**Solution:**
+
+1. Open a terminal
+2. Run `ollama serve`
+3. In another terminal, run `ollama pull llama3.2`
+
+### "Database not connected"
+
+**Solution:**
+
+1. Check that `data/qog_local.db` exists
+2. Run `python scripts/init_db.py` to initialize
+
+### "No relevant content found"
+
+**Possible causes:**
+
+- Query doesn't match any ingested documents
+- Topic filter is too restrictive
+- Try broader search terms or different topic
+
+### Slow responses
+
+**Solutions:**
+
+1. Ensure Ollama is running with sufficient resources
+2. Consider using a smaller model
+3. Reduce `num_ctx` in llm.py for faster inference
+
+## Getting Help
+
+- **Technical Issues**: Submit feedback via the in-app feedback button
+- **Research Questions**: Contact Utrecht University research team
+- **Bug Reports**: Use the "Bug Report" feedback type
+
+\newpage
+
+# Appendix C: Glossary
+
+| Term | Definition |
+|------|------------|
+| **RAG** | Retrieval-Augmented Generation; technique combining document retrieval with LLM generation |
+| **LLM** | Large Language Model; AI model for natural language processing |
+| **Ollama** | Local LLM deployment framework |
+| **Likert Scale** | Survey response scale measuring agreement/satisfaction |
+| **RQS** | Response Quality Score; system-calculated quality metric |
+| **Chunk** | Segment of a document used for retrieval |
+| **Subtopic** | Specific focus area within a broader topic |
+| **Verification Flag** | Indicator of whether response met quality threshold |
+| **User-Normalized** | Metric weighted equally per user to prevent skewing |
+
+---
+
+\vspace{2cm}
+\begin{center}
+\textbf{Quality of Dutch Government}
+
+\textit{Built by DSPG Project Group A}
+
+Utrecht University
+
+December 2025 – January 2026
+\end{center}
