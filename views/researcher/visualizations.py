@@ -61,7 +61,7 @@ df = get_visualization_data()
 # --- VISUALIZATION CONTROLS ---
 st.markdown("### :material/tune: Controls")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
     chart_type = st.selectbox(
@@ -83,6 +83,10 @@ with col4:
     group_by = st.selectbox("Group By", ["Topic", "Source", "Month", "Week"],
                             key="group_by")
 
+with col5:
+    color_scheme = st.selectbox("Color Scheme", ["Dutch Theme", "Rainbow"],
+                                key="color_scheme")
+
 # Apply date filter
 if len(date_range) == 2:
     start_date, end_date = date_range
@@ -93,11 +97,19 @@ else:
 
 st.markdown("---")
 
-# Custom color palette matching the Dutch theme
-colors = [
+# Define color palettes
+dutch_theme_colors = [
     "#FFCD00", "#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444",
     "#06B6D4", "#EC4899"
 ]
+
+rainbow_colors = [
+    "#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082",
+    "#9400D3", "#FF1493"
+]
+
+# Select color palette based on user choice
+colors = rainbow_colors if color_scheme == "Rainbow" else dutch_theme_colors
 
 # --- CHART RENDERING ---
 if chart_type == "Time Series":
