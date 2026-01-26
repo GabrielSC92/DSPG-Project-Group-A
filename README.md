@@ -61,3 +61,16 @@ Deliverables:
         could be ensured using LLMs as an extraction tool.
     o Recommendations on when such tool could be best employed for the
         given task, and when the risks outweigh the benefits.
+## Security
+
+This application implements security best practices following OWASP Top 10 guidelines:
+
+- ✅ **Secure Authentication**: bcrypt password hashing with automatic salt
+- ✅ **Account Protection**: Rate limiting and lockout after failed attempts  
+- ✅ **Input Validation**: XSS and SQL injection prevention
+- ✅ **Strong Password Policy**: Minimum 8 characters with complexity requirements
+- ✅ **Security Configuration**: Environment-based secrets management
+
+For detailed security documentation, see [docs/SECURITY.md](docs/SECURITY.md).
+
+**Production Deployment:** Please review the security checklist in the documentation before deploying to production.
