@@ -303,11 +303,24 @@ elif chart_type == "Correlation":
             corr_matrix[i, j] = val
             corr_matrix[j, i] = val
 
+    # Define colorscale based on selected color scheme
+    if color_scheme == "Rainbow":
+        heatmap_colorscale = [
+            [0, "#4B0082"],      # Indigo
+            [0.2, "#0000FF"],    # Blue
+            [0.4, "#00FF00"],    # Green
+            [0.6, "#FFFF00"],    # Yellow
+            [0.8, "#FF7F00"],    # Orange
+            [1, "#FF0000"]       # Red
+        ]
+    else:
+        heatmap_colorscale = [[0, "#0F172A"], [0.5, "#3B82F6"], [1, "#FFCD00"]]
+    
     fig_heatmap = go.Figure(data=go.Heatmap(
         z=corr_matrix,
         x=topics,
         y=topics,
-        colorscale=[[0, "#0F172A"], [0.5, "#3B82F6"], [1, "#FFCD00"]],
+        colorscale=heatmap_colorscale,
         text=np.round(corr_matrix, 2),
         texttemplate="%{text}",
         textfont={"size": 10},
