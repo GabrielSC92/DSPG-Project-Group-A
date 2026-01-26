@@ -48,6 +48,7 @@ A web-based research tool that translates qualitative Dutch government audit rep
 - **Distribution Analysis** — Topic pie charts, satisfaction histograms, source breakdowns
 - **Comparison Views** — Box plots by topic, grouped bar charts by source & verification
 - **Correlation Analysis** — Heatmaps showing topic relationships, satisfaction vs. quality scatter plots
+- **Color Scheme Options** — Choose between Dutch Theme (UU yellow/blue) or Rainbow (vibrant spectrum) color palettes
 
 ### Data Export
 - **Multiple Formats** — Export filtered data as CSV, Excel, or JSON
