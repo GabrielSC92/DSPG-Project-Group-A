@@ -11,23 +11,64 @@ from datetime import datetime, timedelta
 import random
 import numpy as np
 
-# Page configuration with logo
+try:
+    from utils.database import get_all_interactions, get_available_topics, is_database_connected
+    DB_AVAILABLE = True
+except ImportError:
+    DB_AVAILABLE = False
+
 header_col1, header_col2 = st.columns([4, 1])
 with header_col2:
     st.image("Utrecht_University_logo_square.png", width=80)
 
 
+def load_from_database() -> pd.DataFrame:
+    """Load interaction data from the database for visualizations."""
+    if not DB_AVAILABLE or not is_database_connected():
+        return None
+
+    interactions = get_all_interactions(limit=5000)
+    if not interactions:
+        return None
+
+    df = pd.DataFrame(interactions)
+
+    topics_list = get_available_topics()
+    topic_source_map = {}
+    if topics_list:
+        for t in topics_list:
+            folder = t.get('source_folder', '')
+            topic_source_map[t['label_en']] = folder.replace('_', ' ').title()
+
+    df = df.rename(columns={
+        'interaction_date': 'Date',
+        'topic': 'Topic',
+        'satisfaction_raw': 'Satisfaction',
+        'correlation_index': 'Quality Score',
+        'verification_flag': 'Verified_raw'
+    })
+
+    df['Date'] = pd.to_datetime(df['Date'])
+    df['Verified'] = df['Verified_raw'].apply(lambda x: x == 'V' if x else False)
+    df['Source'] = df['Topic'].map(topic_source_map).fillna('Unknown')
+
+    df = df.drop(columns=['Verified_raw', 'interaction_id', 'user_id', 'topic_id', 'summary'], errors='ignore')
+
+    df['Satisfaction'] = pd.to_numeric(df['Satisfaction'], errors='coerce')
+    df['Quality Score'] = pd.to_numeric(df['Quality Score'], errors='coerce')
+
+    return df
+
+
 def generate_demo_data(n_rows: int = 200) -> pd.DataFrame:
-    """Generate demo data for visualizations."""
+    """Generate demo data for visualizations (fallback when DB is unavailable)."""
 
-    topics = [
-        "Financial Management", "Policy Effectiveness",
-        "Administrative Efficiency", "Service Delivery",
-        "Transparency & Accountability", "Human Resources",
-        "Digital Transformation", "Citizen Engagement"
-    ]
-
-    sources = ["Court of Audit", "Auditdienst Rijk", "IOB"]
+    topics = {
+        "Defence": "Defensie",
+        "Climate": "Climate",
+        "Finance": "Finance",
+        "Healthcare": "Healthcare",
+    }
 
     end_date = datetime.now()
     start_date = end_date - timedelta(days=365)
@@ -37,26 +78,93 @@ def generate_demo_data(n_rows: int = 200) -> pd.DataFrame:
             start_date + timedelta(days=random.randint(0, 365))
             for _ in range(n_rows)
         ],
-        "Topic": [random.choice(topics) for _ in range(n_rows)],
-        "Satisfaction": [random.randint(1, 10) for _ in range(n_rows)],
+        "Topic": [random.choice(list(topics.keys())) for _ in range(n_rows)],
+        "Satisfaction": [random.randint(1, 5) for _ in range(n_rows)],
         "Quality Score":
-        [round(random.uniform(0.5, 1.0), 3) for _ in range(n_rows)],
-        "Source": [random.choice(sources) for _ in range(n_rows)],
+        [round(random.uniform(0.1, 1.0), 3) for _ in range(n_rows)],
         "Verified": [random.choice([True, False]) for _ in range(n_rows)]
     }
 
     df = pd.DataFrame(data)
     df["Date"] = pd.to_datetime(df["Date"])
+    df["Source"] = df["Topic"].map(topics)
     return df
 
 
-@st.cache_data
+@st.cache_data(ttl=60)
 def get_visualization_data():
-    return generate_demo_data(300)
+    """Load from database first, fall back to demo data."""
+    db_data = load_from_database()
+    if db_data is not None and len(db_data) > 0:
+        return db_data, True
+    return generate_demo_data(300), False
 
 
-# Load data
-df = get_visualization_data()
+df, using_db = get_visualization_data()
+
+with st.sidebar:
+    if using_db:
+        st.markdown("""
+        <div style="display: flex; justify-content: center; margin: 0.5rem 0;">
+            <span style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.75rem;
+                font-family: 'Space Mono', monospace;
+                background: rgba(34, 197, 94, 0.15);
+                border: 1px solid rgba(34, 197, 94, 0.3);
+                color: #4ade80;
+            ">
+                <span style="
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: #4ade80;
+                    box-shadow: 0 0 8px #4ade80;
+                    animation: pulse 2s infinite;
+                "></span>
+                DB Connected
+            </span>
+        </div>
+        <style>
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="display: flex; justify-content: center; margin: 0.5rem 0;">
+            <span style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.75rem;
+                font-family: 'Space Mono', monospace;
+                background: rgba(239, 68, 68, 0.15);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                color: #f87171;
+            ">
+                <span style="
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background: #f87171;
+                "></span>
+                DB Demo
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+if len(df) == 0:
+    st.warning("No data available. Please interact with the chat to generate data, or check the database connection.")
+    st.stop()
 
 # --- VISUALIZATION CONTROLS ---
 st.markdown("### :material/tune: Controls")
@@ -93,7 +201,6 @@ else:
 
 st.markdown("---")
 
-# Custom color palette matching the Dutch theme
 colors = [
     "#FFCD00", "#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444",
     "#06B6D4", "#EC4899"
@@ -101,22 +208,20 @@ colors = [
 
 # --- CHART RENDERING ---
 if chart_type == "Time Series":
-    st.markdown("### :material/bar_chart: Satisfaction Trends Over Time")
+    st.markdown(f"### :material/bar_chart: {metric} Trends Over Time")
 
-    # Aggregate by week or month
+    ts_df = filtered_df.copy()
+
     if group_by == "Month":
-        filtered_df["Period"] = filtered_df["Date"].dt.to_period("M").astype(
-            str)
+        ts_df["Period"] = ts_df["Date"].dt.to_period("M").astype(str)
     elif group_by == "Week":
-        filtered_df["Period"] = filtered_df["Date"].dt.to_period("W").astype(
-            str)
+        ts_df["Period"] = ts_df["Date"].dt.to_period("W").astype(str)
     else:
-        filtered_df["Period"] = filtered_df["Date"].dt.strftime("%Y-%m-%d")
+        ts_df["Period"] = ts_df["Date"].dt.strftime("%Y-%m-%d")
 
-    # Group data
     if group_by in ["Topic", "Source"]:
-        agg_df = filtered_df.groupby(["Period",
-                                      group_by])[metric].mean().reset_index()
+        agg_df = ts_df.groupby(["Period",
+                                group_by])[metric].mean().reset_index()
         fig = px.line(agg_df,
                       x="Period",
                       y=metric,
@@ -124,7 +229,7 @@ if chart_type == "Time Series":
                       markers=True,
                       color_discrete_sequence=colors)
     else:
-        agg_df = filtered_df.groupby("Period")[metric].mean().reset_index()
+        agg_df = ts_df.groupby("Period")[metric].mean().reset_index()
         fig = px.line(agg_df,
                       x="Period",
                       y=metric,
@@ -173,27 +278,36 @@ elif chart_type == "Distribution":
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with col2:
-        st.markdown("### :material/bar_chart: Satisfaction Distribution")
+        st.markdown(f"### :material/bar_chart: {metric} Distribution")
+        if metric == "Satisfaction":
+            hist_nbins = 5
+            hist_xlabel = "Satisfaction Score (1-5)"
+            hist_dtick = 1
+        else:
+            hist_nbins = 20
+            hist_xlabel = "Quality Score (0-1)"
+            hist_dtick = 0.1
+
         fig_hist = px.histogram(filtered_df,
-                                x="Satisfaction",
-                                nbins=10,
+                                x=metric,
+                                nbins=hist_nbins,
                                 color_discrete_sequence=[colors[0]])
         fig_hist.update_layout(template="plotly_dark",
                                paper_bgcolor="rgba(0,0,0,0)",
                                plot_bgcolor="rgba(0,0,0,0)",
                                font=dict(family="DM Sans"),
-                               xaxis_title="Satisfaction Score",
+                               xaxis_title=hist_xlabel,
                                yaxis_title="Frequency",
                                bargap=0.1)
         fig_hist.update_xaxes(showgrid=True,
                               gridwidth=1,
-                              gridcolor='rgba(255,255,255,0.1)')
+                              gridcolor='rgba(255,255,255,0.1)',
+                              dtick=hist_dtick)
         fig_hist.update_yaxes(showgrid=True,
                               gridwidth=1,
                               gridcolor='rgba(255,255,255,0.1)')
         st.plotly_chart(fig_hist, use_container_width=True)
 
-    # Source distribution bar chart
     st.markdown("### :material/bar_chart: Records by Source")
     source_counts = filtered_df["Source"].value_counts().reset_index()
     source_counts.columns = ["Source", "Count"]
@@ -215,12 +329,11 @@ elif chart_type == "Distribution":
     st.plotly_chart(fig_bar, use_container_width=True)
 
 elif chart_type == "Comparison":
-    st.markdown("### :material/bar_chart: Satisfaction by Topic")
+    st.markdown(f"### :material/bar_chart: {metric} by Topic")
 
-    # Box plot
     fig_box = px.box(filtered_df,
                      x="Topic",
-                     y="Satisfaction",
+                     y=metric,
                      color="Topic",
                      color_discrete_sequence=colors)
     fig_box.update_layout(template="plotly_dark",
@@ -236,22 +349,19 @@ elif chart_type == "Comparison":
                          gridcolor='rgba(255,255,255,0.1)')
     st.plotly_chart(fig_box, use_container_width=True)
 
-    # Grouped bar comparison by source
     st.markdown(
-        "### :material/bar_chart: Average Satisfaction by Source & Verification Status"
+        f"### :material/bar_chart: Average {metric} by Source & Verification Status"
     )
     comparison_df = filtered_df.groupby(
-        ["Source", "Verified"])["Satisfaction"].mean().reset_index()
+        ["Source", "Verified"])[metric].mean().reset_index()
     comparison_df["Verified"] = comparison_df["Verified"].map({
-        True:
-        "Verified",
-        False:
-        "Unverified"
+        True: "Verified",
+        False: "Unverified"
     })
 
     fig_grouped = px.bar(comparison_df,
                          x="Source",
-                         y="Satisfaction",
+                         y=metric,
                          color="Verified",
                          barmode="group",
                          color_discrete_sequence=[colors[4], colors[5]])
@@ -271,73 +381,71 @@ elif chart_type == "Comparison":
     st.plotly_chart(fig_grouped, use_container_width=True)
 
 elif chart_type == "Correlation":
-    st.markdown("### :material/grid_on: Correlation Heatmap")
+    st.markdown("### :material/grid_on: Topic Average Metrics")
 
-    # Create correlation matrix by topic
-    pivot_df = filtered_df.pivot_table(values=["Satisfaction", "Quality Score"],
-                                       index="Topic",
-                                       aggfunc="mean")
+    pivot_df = filtered_df.pivot_table(
+        values=["Satisfaction", "Quality Score"],
+        index="Topic",
+        aggfunc="mean"
+    ).dropna()
 
-    # Create heatmap
-    topics = pivot_df.index.tolist()
-    n_topics = len(topics)
+    if len(pivot_df) >= 2:
+        topic_labels = pivot_df.index.tolist()
 
-    # Generate mock correlation matrix
-    np.random.seed(42)
-    corr_matrix = np.eye(n_topics)
-    for i in range(n_topics):
-        for j in range(i + 1, n_topics):
-            val = np.random.uniform(0.3, 0.9)
-            corr_matrix[i, j] = val
-            corr_matrix[j, i] = val
+        fig_heatmap = go.Figure(data=go.Heatmap(
+            z=pivot_df.values,
+            x=pivot_df.columns.tolist(),
+            y=topic_labels,
+            colorscale=[[0, "#0F172A"], [0.5, "#3B82F6"], [1, "#FFCD00"]],
+            text=np.round(pivot_df.values, 2),
+            texttemplate="%{text}",
+            textfont={"size": 12},
+            hovertemplate="Topic: %{y}<br>Metric: %{x}<br>Value: %{z:.2f}<extra></extra>"
+        ))
 
-    fig_heatmap = go.Figure(data=go.Heatmap(
-        z=corr_matrix,
-        x=topics,
-        y=topics,
-        colorscale=[[0, "#0F172A"], [0.5, "#3B82F6"], [1, "#FFCD00"]],
-        text=np.round(corr_matrix, 2),
-        texttemplate="%{text}",
-        textfont={"size": 10},
-        hovertemplate=
-        "Topic 1: %{x}<br>Topic 2: %{y}<br>Correlation: %{z:.2f}<extra></extra>"
-    ))
+        fig_heatmap.update_layout(template="plotly_dark",
+                                  paper_bgcolor="rgba(0,0,0,0)",
+                                  plot_bgcolor="rgba(0,0,0,0)",
+                                  font=dict(family="DM Sans"),
+                                  xaxis_title="Metric",
+                                  yaxis_title="Topic",
+                                  height=max(400, len(topic_labels) * 60))
 
-    fig_heatmap.update_layout(template="plotly_dark",
-                              paper_bgcolor="rgba(0,0,0,0)",
-                              plot_bgcolor="rgba(0,0,0,0)",
-                              font=dict(family="DM Sans"),
-                              xaxis_tickangle=-45,
-                              height=600)
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+    else:
+        st.info("Need at least 2 topics with data to show the heatmap.")
 
-    st.plotly_chart(fig_heatmap, use_container_width=True)
-
-    # Scatter plot: Satisfaction vs Quality Score
     st.markdown("### :material/bar_chart: Satisfaction vs Quality Score")
-    fig_scatter = px.scatter(filtered_df,
-                             x="Quality Score",
-                             y="Satisfaction",
-                             color="Topic",
-                             size="Satisfaction",
-                             color_discrete_sequence=colors,
-                             opacity=0.7)
-    fig_scatter.update_layout(template="plotly_dark",
-                              paper_bgcolor="rgba(0,0,0,0)",
-                              plot_bgcolor="rgba(0,0,0,0)",
-                              font=dict(family="DM Sans"),
-                              legend=dict(orientation="h",
-                                          yanchor="bottom",
-                                          y=-0.3))
-    fig_scatter.update_xaxes(showgrid=True,
-                             gridwidth=1,
-                             gridcolor='rgba(255,255,255,0.1)')
-    fig_scatter.update_yaxes(showgrid=True,
-                             gridwidth=1,
-                             gridcolor='rgba(255,255,255,0.1)')
-    st.plotly_chart(fig_scatter, use_container_width=True)
+
+    scatter_df = filtered_df.dropna(subset=["Quality Score", "Satisfaction"])
+    if len(scatter_df) > 0:
+        fig_scatter = px.scatter(scatter_df,
+                                 x="Quality Score",
+                                 y="Satisfaction",
+                                 color="Topic",
+                                 size="Satisfaction",
+                                 color_discrete_sequence=colors,
+                                 opacity=0.7)
+        fig_scatter.update_layout(template="plotly_dark",
+                                  paper_bgcolor="rgba(0,0,0,0)",
+                                  plot_bgcolor="rgba(0,0,0,0)",
+                                  font=dict(family="DM Sans"),
+                                  legend=dict(orientation="h",
+                                              yanchor="bottom",
+                                              y=-0.3))
+        fig_scatter.update_xaxes(showgrid=True,
+                                 gridwidth=1,
+                                 gridcolor='rgba(255,255,255,0.1)')
+        fig_scatter.update_yaxes(showgrid=True,
+                                 gridwidth=1,
+                                 gridcolor='rgba(255,255,255,0.1)')
+        st.plotly_chart(fig_scatter, use_container_width=True)
+    else:
+        st.info("No records with both Satisfaction and Quality Score available for scatter plot.")
 
 # Footer
 st.markdown("---")
+data_label = "live database" if using_db else "demo data"
 st.caption(
-    f"Visualizing {len(filtered_df)} records • Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    f"Visualizing {len(filtered_df)} records from {data_label} • Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 )
