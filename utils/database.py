@@ -313,17 +313,33 @@ def is_database_connected() -> bool:
 
 # ============== AUTH TABLE OPERATIONS ==============
 
-import hashlib
+import bcrypt
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using SHA256."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """
+    Hash a password using bcrypt with automatic salt generation.
+    This is much more secure than SHA-256 as it:
+    - Includes automatic salt generation
+    - Is computationally expensive (prevents brute force)
+    - Is designed specifically for password hashing
+    """
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against its hash."""
-    return hash_password(password) == password_hash
+    """
+    Verify a password against its bcrypt hash.
+    Handles both new bcrypt hashes and legacy SHA-256 hashes for backwards compatibility.
+    """
+    try:
+        # Try bcrypt verification first (new format)
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    except (ValueError, AttributeError):
+        # Fallback for legacy SHA-256 hashes (for existing users)
+        # This should be removed after all passwords are migrated
+        import hashlib
+        return hashlib.sha256(password.encode()).hexdigest() == password_hash
 
 
 def get_user_by_email(email: str,

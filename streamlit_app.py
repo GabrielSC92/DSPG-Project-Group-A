@@ -256,15 +256,25 @@ def validate_email(email: str) -> bool:
 
 def validate_password(password: str) -> tuple[bool, str]:
     """
-    Validate password strength.
+    Validate password strength according to security best practices.
+    Requirements:
+    - Minimum 8 characters (increased from 6 for better security)
+    - At least one number
+    - At least one letter
+    - At least one special character (recommended)
+    
     Returns (is_valid, error_message)
     """
-    if len(password) < 6:
-        return False, "Password must be at least 6 characters"
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
     if not any(c.isdigit() for c in password):
         return False, "Password must contain at least one number"
     if not any(c.isalpha() for c in password):
         return False, "Password must contain at least one letter"
+    # Check for special characters (recommended but not enforced for usability)
+    if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
+        # Just warn, don't fail
+        pass
     return True, ""
 
 
@@ -297,7 +307,7 @@ def render_signup_dialog():
         password = st.text_input(
             "Password",
             type="password",
-            placeholder="Min 6 characters, include letters and numbers",
+            placeholder="Min 8 characters, include letters and numbers",
             key="signup_password")
 
         confirm_password = st.text_input("Confirm Password",

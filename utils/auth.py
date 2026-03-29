@@ -6,7 +6,7 @@ Handles user authentication, session management, and access level control.
 import streamlit as st
 from enum import Enum
 from typing import Tuple, Optional, Dict, Any
-import hashlib
+import bcrypt
 from datetime import datetime
 
 # Try to import database functions
@@ -29,7 +29,8 @@ class AccessLevel(Enum):
 
 
 # Fallback demo users (used if database is not available)
-DEMO_PASSWORD_HASH = hashlib.sha256("demo123".encode()).hexdigest()
+# Using bcrypt with salt for secure password hashing
+DEMO_PASSWORD_HASH = bcrypt.hashpw("demo123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 DEMO_USERS = {
     "user@demo.nl": {
@@ -69,6 +70,7 @@ def init_session_state() -> None:
         'user': None,
         'access_level': None,
         'login_attempts': 0,
+        'lockout_until': None,  # Account lockout timestamp
         'show_feedback_modal': False,
         'chat_history': [],
         'current_satisfaction': None,
@@ -82,13 +84,29 @@ def init_session_state() -> None:
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using SHA256."""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """
+    Hash a password using bcrypt with automatic salt generation.
+    This is much more secure than SHA-256 as it:
+    - Includes automatic salt generation
+    - Is computationally expensive (prevents brute force)
+    - Is designed specifically for password hashing
+    """
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against its hash."""
-    return hash_password(password) == password_hash
+    """
+    Verify a password against its bcrypt hash.
+    Handles both new bcrypt hashes and legacy SHA-256 hashes for backwards compatibility.
+    """
+    try:
+        # Try bcrypt verification first (new format)
+        return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+    except (ValueError, AttributeError):
+        # Fallback for legacy SHA-256 hashes (for existing demo users)
+        # This should be removed after migration
+        import hashlib
+        return hashlib.sha256(password.encode()).hexdigest() == password_hash
 
 
 def _convert_access_level(access_level_str: str) -> AccessLevel:
@@ -138,7 +156,11 @@ def authenticate_user(email: str,
 
 def login_user(email: str, password: str) -> Tuple[bool, str]:
     """
-    Attempt to log in a user.
+    Attempt to log in a user with enhanced security features.
+    Includes:
+    - Rate limiting (max 5 attempts)
+    - Account lockout (15 minutes after 5 failed attempts)
+    - Secure error messages (don't reveal if email exists)
     
     Args:
         email: User's email address
@@ -147,21 +169,33 @@ def login_user(email: str, password: str) -> Tuple[bool, str]:
     Returns:
         Tuple of (success: bool, message: str)
     """
+    from datetime import datetime, timedelta
+    
+    # Check if account is locked out
+    lockout_until = st.session_state.get('lockout_until')
+    if lockout_until and datetime.now() < lockout_until:
+        remaining = (lockout_until - datetime.now()).seconds // 60
+        return False, f"Account temporarily locked. Try again in {remaining} minutes."
+    
     # Track login attempts
     st.session_state.login_attempts += 1
 
-    # Check for too many attempts
-    if st.session_state.login_attempts > 5:
-        return False, "Too many login attempts. Please try again later."
+    # Check for too many attempts - implement account lockout
+    if st.session_state.login_attempts >= 5:
+        # Lock account for 15 minutes
+        st.session_state.lockout_until = datetime.now() + timedelta(minutes=15)
+        return False, "Too many failed login attempts. Account locked for 15 minutes."
 
     # Authenticate
     success, user_data = authenticate_user(email, password)
 
     if success and user_data:
+        # Reset on successful login
         st.session_state.authenticated = True
         st.session_state.user = user_data
         st.session_state.access_level = user_data['access_level']
         st.session_state.login_attempts = 0
+        st.session_state.lockout_until = None
 
         # Log successful login
         access_str = "Researcher" if user_data[
@@ -169,6 +203,7 @@ def login_user(email: str, password: str) -> Tuple[bool, str]:
         db_status = "(DB)" if st.session_state.using_database else "(Demo)"
         return True, f"Welcome! Access level: {access_str} {db_status}"
 
+    # Generic error message to prevent email enumeration attacks
     return False, "Invalid email or password. Please try again."
 
 
@@ -181,6 +216,8 @@ def logout_user() -> None:
     st.session_state.current_satisfaction = None
     st.session_state.show_feedback_modal = False
     st.session_state.using_database = False
+    st.session_state.login_attempts = 0
+    st.session_state.lockout_until = None
 
 
 def is_authenticated() -> bool:
